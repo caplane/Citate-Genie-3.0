@@ -657,6 +657,158 @@ def format_citation():
         }), 500
 
 
+# Style to output type mapping
+FOOTNOTE_STYLES = ['Chicago Manual of Style', 'Bluebook', 'OSCOLA', 'Turabian', 'Vancouver']
+AUTHOR_DATE_STYLES = ['APA 7', 'MLA 9', 'Chicago Author-Date', 'Harvard', 'APA', 'MLA', 'apa', 'mla']
+
+def get_output_type(style: str) -> str:
+    """Determine if style uses footnotes or author-date citations."""
+    if any(s.lower() in style.lower() for s in ['apa', 'mla', 'harvard', 'author-date']):
+        return 'author-date'
+    return 'footnote'
+
+def get_bibliography_title(style: str) -> str:
+    """Get the appropriate bibliography title for the style."""
+    style_lower = style.lower()
+    if 'mla' in style_lower:
+        return 'Works Cited'
+    elif 'apa' in style_lower or 'harvard' in style_lower or 'author-date' in style_lower:
+        return 'References'
+    return 'Bibliography'
+
+
+@app.route('/api/process-unified', methods=['POST'])
+def process_unified():
+    """
+    Unified document processing API.
+    
+    Automatically routes to footnote or author-date processing based on style.
+    
+    Expects multipart form with:
+    - file: .docx document
+    - style: citation style
+    
+    Returns:
+    {
+        "success": true,
+        "session_id": "uuid",
+        "output_type": "footnote" or "author-date",
+        "stats": { "citations_found", "citations_resolved" },
+        "bibliography_title": "Bibliography" or "References"
+    }
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({
+                'success': False,
+                'error': 'No file provided'
+            }), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({
+                'success': False,
+                'error': 'No file selected'
+            }), 400
+        
+        if not allowed_file(file.filename):
+            return jsonify({
+                'success': False,
+                'error': 'Only .docx files are supported'
+            }), 400
+        
+        style = request.form.get('style', 'Chicago Manual of Style')
+        output_type = get_output_type(style)
+        bibliography_title = get_bibliography_title(style)
+        
+        print(f"[API] process-unified: style={style}, output_type={output_type}")
+        
+        # Read file bytes
+        file_bytes = file.read()
+        
+        if output_type == 'author-date':
+            # Use author-date processing
+            from processors.author_year_extractor import AuthorDateExtractor
+            
+            extractor = AuthorDateExtractor()
+            extracted_citations = extractor.extract_citations_from_docx(file_bytes)
+            unique_citations = extractor.get_unique_citations(extracted_citations)
+            
+            # Create session
+            session_id = sessions.create()
+            sessions.set(session_id, 'original_bytes', file_bytes)
+            sessions.set(session_id, 'style', style)
+            sessions.set(session_id, 'mode', 'author-date')
+            sessions.set(session_id, 'filename', secure_filename(file.filename))
+            
+            print(f"[API] Author-date: found {len(unique_citations)} unique citations")
+            
+            return jsonify({
+                'success': True,
+                'session_id': session_id,
+                'output_type': 'author-date',
+                'stats': {
+                    'citations_found': len(unique_citations),
+                    'citations_resolved': len(unique_citations)  # Will be updated after processing
+                },
+                'bibliography_title': bibliography_title
+            })
+        
+        else:
+            # Use footnote/endnote processing
+            from document_processor import process_document
+            
+            processed_bytes, results = process_document(
+                file_bytes,
+                style=style,
+                add_links=True
+            )
+            
+            # Create session
+            session_id = sessions.create()
+            sessions.set(session_id, 'processed_doc', processed_bytes)
+            sessions.set(session_id, 'original_bytes', file_bytes)
+            sessions.set(session_id, 'style', style)
+            sessions.set(session_id, 'mode', 'footnote')
+            sessions.set(session_id, 'filename', secure_filename(file.filename))
+            sessions.set(session_id, 'results', [
+                {
+                    'id': idx + 1,
+                    'original': r.original,
+                    'formatted': r.formatted,
+                    'success': r.success,
+                    'error': r.error,
+                    'form': r.citation_form,
+                    'type': r.citation_type.name.lower() if hasattr(r, 'citation_type') and r.citation_type else 'unknown'
+                }
+                for idx, r in enumerate(results)
+            ])
+            
+            success_count = sum(1 for r in results if r.success)
+            print(f"[API] Footnote: processed {len(results)} notes, {success_count} resolved")
+            
+            return jsonify({
+                'success': True,
+                'session_id': session_id,
+                'output_type': 'footnote',
+                'stats': {
+                    'citations_found': len(results),
+                    'citations_resolved': success_count
+                },
+                'bibliography_title': bibliography_title
+            })
+        
+    except Exception as e:
+        print(f"[API] Error in /api/process-unified: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/process', methods=['POST'])
 def process_doc():
     """
@@ -1019,36 +1171,6 @@ def process_author_date():
         
         print(f"[API] Extracted {len(extracted_citations)} citations, {len(unique_citations)} unique")
         
-        # Extract document body text for context-aware lookups
-        document_context = ""
-        try:
-            from document_processor import WordDocumentProcessor
-            from io import BytesIO
-            
-            processor = WordDocumentProcessor(BytesIO(file_bytes))
-            body_text = processor.get_body_text(max_chars=1500)
-            processor.cleanup()
-            
-            if body_text:
-                import openai
-                from config import OPENAI_API_KEY
-                
-                if OPENAI_API_KEY:
-                    client = openai.OpenAI(api_key=OPENAI_API_KEY)
-                    gist_response = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[{
-                            "role": "user",
-                            "content": f"In 10-15 words, describe the academic field and topic of this text. Just give the description, no preamble:\n\n{body_text[:1000]}"
-                        }],
-                        max_tokens=50,
-                        temperature=0.3
-                    )
-                    document_context = gist_response.choices[0].message.content.strip()
-                    print(f"[API] Document gist: {document_context}")
-        except Exception as e:
-            print(f"[API] Could not generate document gist: {e}")
-        
         # Process citations in PARALLEL for speed
         from concurrent.futures import ThreadPoolExecutor, as_completed
         
@@ -1070,7 +1192,7 @@ def process_author_date():
             
             try:
                 # Get raw metadata (no formatting yet)
-                metadata_list = get_parenthetical_metadata(original_text, limit=4, context=document_context)
+                metadata_list = get_parenthetical_metadata(original_text, limit=4)
                 
                 # Build options with raw metadata
                 options = [{

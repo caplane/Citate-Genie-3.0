@@ -1148,11 +1148,35 @@ def process_document(
     endnotes = processor.get_endnotes()
     footnotes = processor.get_footnotes()
     
+    # Extract document body text for context-aware lookups
+    document_context = ""
+    try:
+        body_text = processor.get_body_text(max_chars=1500)
+        if body_text:
+            import openai
+            from config import OPENAI_API_KEY
+            
+            if OPENAI_API_KEY:
+                client = openai.OpenAI(api_key=OPENAI_API_KEY)
+                gist_response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{
+                        "role": "user",
+                        "content": f"In 10-15 words, describe the academic field and topic of this text. Just give the description, no preamble:\n\n{body_text[:1000]}"
+                    }],
+                    max_tokens=50,
+                    temperature=0.3
+                )
+                document_context = gist_response.choices[0].message.content.strip()
+                print(f"[process_document] Document gist: {document_context}")
+    except Exception as e:
+        print(f"[process_document] Could not generate document gist: {e}")
+    
     # Helper to call get_citation with timeout
-    def get_citation_with_timeout(text: str, style: str, timeout: int = NOTE_TIMEOUT):
+    def get_citation_with_timeout(text: str, style: str, context: str = "", timeout: int = NOTE_TIMEOUT):
         """Call get_citation with a timeout wrapper."""
         with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(get_citation, text, style)
+            future = executor.submit(get_citation, text, style, context)
             try:
                 return future.result(timeout=timeout)
             except FuturesTimeout:
@@ -1204,7 +1228,7 @@ def process_document(
                 )
             
             # Case 2+: Process citation to get metadata (with timeout)
-            metadata, full_formatted = get_citation_with_timeout(original_text, style)
+            metadata, full_formatted = get_citation_with_timeout(original_text, style, document_context)
             
             if not metadata or not full_formatted:
                 return ProcessedCitation(

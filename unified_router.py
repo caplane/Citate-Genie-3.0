@@ -83,19 +83,28 @@ except ImportError:
     GEMINI_AVAILABLE = False
 
 
-def classify_with_ai(query: str) -> Tuple[CitationType, Optional[CitationMetadata]]:
+def classify_with_ai(query: str, context: str = "") -> Tuple[CitationType, Optional[CitationMetadata]]:
     """
     Use configured AI router (Claude preferred, Gemini fallback).
     Returns (CitationType, optional metadata).
+    
+    Args:
+        query: The citation text to classify
+        context: Optional document context/gist to improve classification
     """
+    # Append context hint to query if provided
+    enhanced_query = query
+    if context:
+        enhanced_query = f"{query} [Context: {context}]"
+    
     if AI_ROUTER == 'claude' and CLAUDE_AVAILABLE:
-        return classify_with_claude(query)
+        return classify_with_claude(enhanced_query)
     elif AI_ROUTER == 'gemini' and GEMINI_AVAILABLE:
-        return classify_with_gemini(query)
+        return classify_with_gemini(enhanced_query)
     elif CLAUDE_AVAILABLE:
-        return classify_with_claude(query)
+        return classify_with_claude(enhanced_query)
     elif GEMINI_AVAILABLE:
-        return classify_with_gemini(query)
+        return classify_with_gemini(enhanced_query)
     else:
         return CitationType.UNKNOWN, None
 
@@ -788,11 +797,16 @@ def _route_url(url: str) -> Optional[CitationMetadata]:
 # MAIN ROUTING FUNCTION
 # =============================================================================
 
-def route_citation(query: str, style: str = "chicago") -> Tuple[Optional[CitationMetadata], str]:
+def route_citation(query: str, style: str = "chicago", context: str = "") -> Tuple[Optional[CitationMetadata], str]:
     """
     Main entry point: route query to appropriate engine and format result.
     
     Returns: (CitationMetadata, formatted_citation_string)
+    
+    Args:
+        query: The citation text to process
+        style: Citation style to use for formatting
+        context: Optional document context/gist to improve AI classification
     
     NEW (V3.4): Tries to parse already-formatted citations first.
     If the citation is complete (has author, title, journal/publisher, year),
@@ -860,7 +874,7 @@ def route_citation(query: str, style: str = "chicago") -> Tuple[Optional[Citatio
     else:
         # UNKNOWN: Try AI classification first
         if AI_AVAILABLE:
-            ai_type, ai_meta = classify_with_ai(query)
+            ai_type, ai_meta = classify_with_ai(query, context)
             if ai_type != CitationType.UNKNOWN:
                 print(f"[UnifiedRouter] AI classified as: {ai_type.name}")
                 
@@ -1343,9 +1357,9 @@ def get_parenthetical_metadata(
 # =============================================================================
 
 # Alias for app.py compatibility
-def get_citation(query: str, style: str = "chicago") -> Tuple[Optional[CitationMetadata], str]:
+def get_citation(query: str, style: str = "chicago", context: str = "") -> Tuple[Optional[CitationMetadata], str]:
     """Alias for route_citation() - backward compatibility."""
-    return route_citation(query, style)
+    return route_citation(query, style, context)
 
 
 def search_citation(query: str) -> List[dict]:

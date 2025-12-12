@@ -4,6 +4,7 @@ citeflex/config.py
 Configuration, constants, and shared settings.
 
 Version History:
+    2025-12-12: Added LOC_API_KEY for Library of Congress API
     2025-12-10: Added OPENAI_API_KEY and ANTHROPIC_API_KEY with .lstrip('=') fix
     2025-12-07: Added SERPAPI_KEY for Google Scholar integration
     2025-12-05: Added version tracking, fixed get_gov_agency to check specific domains first
@@ -39,6 +40,7 @@ GOOGLE_CSE_API_KEY = os.environ.get('GOOGLE_CSE_API_KEY', '')
 GOOGLE_CSE_ID = os.environ.get('GOOGLE_CSE_ID', '')
 SERPAPI_KEY = os.environ.get('SERPAPI_KEY', '')
 BRAVE_API_KEY = os.environ.get('BRAVE_API_KEY', '')  # For fast URL citation lookup
+LOC_API_KEY = os.environ.get('LOC_API_KEY', '')  # Library of Congress API
 
 # =============================================================================
 # HTTP SETTINGS

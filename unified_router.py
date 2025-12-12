@@ -1301,7 +1301,8 @@ def get_parenthetical_options(
 
 def get_parenthetical_metadata(
     citation_text: str, 
-    limit: int = 5
+    limit: int = 5,
+    context: str = ""
 ) -> List[CitationMetadata]:
     """
     Get raw metadata options for a parenthetical citation (no formatting).
@@ -1312,6 +1313,7 @@ def get_parenthetical_metadata(
     Args:
         citation_text: Text like "(Simonton, 1992)" or "(Smith & Jones, 2020)"
         limit: Maximum options to return (default: 5)
+        context: Optional document context/gist to improve lookup accuracy
         
     Returns:
         List of CitationMetadata objects (unformatted).
@@ -1319,7 +1321,7 @@ def get_parenthetical_metadata(
     try:
         from engines.ai_lookup import lookup_parenthetical_citation_options
         
-        metadata_list = lookup_parenthetical_citation_options(citation_text, limit=limit)
+        metadata_list = lookup_parenthetical_citation_options(citation_text, context=context, limit=limit)
         
         if not metadata_list:
             print(f"[UnifiedRouter] No metadata found for: {citation_text}")

@@ -5,11 +5,6 @@ citeflex/app.py
 Flask application for CiteFlex Unified.
 
 Version History:
-    2025-12-12: V3.0 - UNIFIED PROCESSOR ARCHITECTURE
-                - Added /api/process-unified endpoint
-                - Style now determines output format (footnote vs author-date)
-                - New processor modules: orchestrator, extractors, builders
-                - Removed need for separate mode selection
     2025-12-11: Fixed Author-Date UX to match Endnote UX:
                 - Added 'recommendation' field (AI's best guess)
                 - Original text now appears as first option (id=0)
@@ -1024,6 +1019,36 @@ def process_author_date():
         
         print(f"[API] Extracted {len(extracted_citations)} citations, {len(unique_citations)} unique")
         
+        # Extract document body text for context-aware lookups
+        document_context = ""
+        try:
+            from document_processor import WordDocumentProcessor
+            from io import BytesIO
+            
+            processor = WordDocumentProcessor(BytesIO(file_bytes))
+            body_text = processor.get_body_text(max_chars=1500)
+            processor.cleanup()
+            
+            if body_text:
+                import openai
+                from config import OPENAI_API_KEY
+                
+                if OPENAI_API_KEY:
+                    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+                    gist_response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[{
+                            "role": "user",
+                            "content": f"In 10-15 words, describe the academic field and topic of this text. Just give the description, no preamble:\n\n{body_text[:1000]}"
+                        }],
+                        max_tokens=50,
+                        temperature=0.3
+                    )
+                    document_context = gist_response.choices[0].message.content.strip()
+                    print(f"[API] Document gist: {document_context}")
+        except Exception as e:
+            print(f"[API] Could not generate document gist: {e}")
+        
         # Process citations in PARALLEL for speed
         from concurrent.futures import ThreadPoolExecutor, as_completed
         
@@ -1045,7 +1070,7 @@ def process_author_date():
             
             try:
                 # Get raw metadata (no formatting yet)
-                metadata_list = get_parenthetical_metadata(original_text, limit=4)
+                metadata_list = get_parenthetical_metadata(original_text, limit=4, context=document_context)
                 
                 # Build options with raw metadata
                 options = [{
@@ -1520,130 +1545,12 @@ def select_citation():
         }), 500
 
 
-# =============================================================================
-# UNIFIED PROCESSOR ENDPOINTS (NEW 2025-12-12)
-# Style-driven processing - style determines footnote vs author-date output
-# =============================================================================
-
-@app.route('/api/process-unified', methods=['POST'])
-def process_unified():
-    """
-    Unified document processing - style determines output format.
-    
-    Expects multipart form with:
-    - file: .docx document
-    - style: citation style (determines footnote vs author-date)
-    
-    Style mapping:
-    - Chicago Notes-Bibliography, Bluebook, OSCOLA → footnote output
-    - APA 7, MLA 9, Chicago Author-Date → author-date output (body + References)
-    
-    Returns session info and processing stats.
-    """
-    try:
-        if 'file' not in request.files:
-            return jsonify({
-                'success': False,
-                'error': 'No file provided'
-            }), 400
-        
-        file = request.files['file']
-        
-        if file.filename == '':
-            return jsonify({
-                'success': False,
-                'error': 'No file selected'
-            }), 400
-        
-        if not allowed_file(file.filename):
-            return jsonify({
-                'success': False,
-                'error': 'Only .docx files are supported'
-            }), 400
-        
-        style = request.form.get('style', 'APA 7')
-        
-        # Read file bytes
-        file_bytes = file.read()
-        
-        # Import and use unified processor
-        from processors.orchestrator import process_document_unified, get_style_info
-        
-        # Get style info for response
-        style_info = get_style_info(style)
-        
-        print(f"[API] Unified processing: {file.filename} with style '{style}' ({style_info['output_type']})")
-        
-        # Process document
-        result = process_document_unified(
-            file_bytes,
-            style=style,
-            add_links=True
-        )
-        
-        # Create session
-        session_id = sessions.create()
-        
-        sessions.set(session_id, 'processed_doc', result.document_bytes)
-        sessions.set(session_id, 'original_bytes', file_bytes)
-        sessions.set(session_id, 'style', style)
-        sessions.set(session_id, 'filename', secure_filename(file.filename))
-        sessions.set(session_id, 'output_type', result.output_type)
-        
-        print(f"[API] Unified processing complete: {result.citations_resolved}/{result.citations_found} resolved")
-        
-        return jsonify({
-            'success': result.success,
-            'session_id': session_id,
-            'style': style,
-            'output_type': result.output_type,
-            'bibliography_title': style_info['bibliography_title'],
-            'stats': {
-                'citations_found': result.citations_found,
-                'citations_resolved': result.citations_resolved,
-                'errors': result.errors[:5] if result.errors else [],  # First 5 errors
-            }
-        })
-        
-    except Exception as e:
-        print(f"[API] Error in /api/process-unified: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@app.route('/api/style-info/<style>')
-def style_info(style: str):
-    """
-    Get information about a citation style.
-    
-    Returns whether style uses footnotes or author-date,
-    and the appropriate bibliography heading.
-    """
-    from processors.orchestrator import get_style_info
-    
-    try:
-        info = get_style_info(style)
-        return jsonify({
-            'success': True,
-            **info
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
 @app.route('/health')
 def health():
     """Health check endpoint."""
     return jsonify({
         'status': 'healthy',
-        'version': '3.0.0',  # Unified processor - style-driven workflow
+        'version': '2.1.0',  # Updated version for author-date support
         'sessions_count': len(sessions._sessions),
         'persistence': sessions._persistence_available
     })

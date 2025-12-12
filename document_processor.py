@@ -458,6 +458,43 @@ class WordDocumentProcessor:
             print(f"[WordDocumentProcessor] Error reading footnotes: {e}")
             return []
     
+    def get_body_text(self, max_chars: int = 2000) -> str:
+        """
+        Extract plain text from the document body.
+        
+        Used to generate a "gist" of the document for context-aware citation lookup.
+        
+        Args:
+            max_chars: Maximum characters to return (default 2000)
+            
+        Returns:
+            Plain text string from the document body
+        """
+        document_path = os.path.join(self.temp_dir, 'word', 'document.xml')
+        if not os.path.exists(document_path):
+            return ""
+        
+        try:
+            tree = ET.parse(document_path)
+            root = tree.getroot()
+            
+            # Extract all text elements
+            text_elements = root.findall('.//{%s}t' % self.NS['w'])
+            full_text = ' '.join([t.text for t in text_elements if t.text])
+            
+            # Clean up whitespace
+            full_text = ' '.join(full_text.split())
+            
+            # Truncate to max_chars
+            if len(full_text) > max_chars:
+                full_text = full_text[:max_chars] + "..."
+            
+            return full_text
+            
+        except Exception as e:
+            print(f"[WordDocumentProcessor] Error extracting body text: {e}")
+            return ""
+    
     def get_body_citations(self) -> List[Dict[str, Any]]:
         """
         Extract APA-style author-date citations from the document body.

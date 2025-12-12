@@ -1208,6 +1208,49 @@ def get_multiple_citations(query: str, style: str = "chicago", limit: int = 5) -
             except Exception:
                 pass
     
+    # AI ENHANCEMENT: For keyword searches, also try AI to get better matches
+    # Database searches often return irrelevant results for ambiguous queries like "Eric Caplan trains brains"
+    # AI can understand context and find the actual work being referenced
+    is_keyword_search = not is_url(query) and not detection.doi and not superlegal.is_legal_citation(query)
+    
+    if is_keyword_search and AI_AVAILABLE and CLAUDE_AVAILABLE:
+        print(f"[UnifiedRouter] Keyword search detected, adding AI results...")
+        try:
+            ai_options = get_citation_options(query, max_options=3)
+            for opt in ai_options:
+                if len(results) >= limit:
+                    break
+                # Check if already have this result
+                is_duplicate = any(
+                    opt.get('title') and r[0].title and 
+                    opt.get('title', '').lower()[:30] == r[0].title.lower()[:30]
+                    for r in results
+                )
+                if not is_duplicate and opt.get('title'):
+                    # Convert to CitationMetadata
+                    meta = CitationMetadata(
+                        citation_type=CitationType.JOURNAL if opt.get('journal') else CitationType.BOOK,
+                        raw_source=query,
+                        source_engine="AI Lookup",
+                        title=opt.get('title', ''),
+                        authors=opt.get('authors', []),
+                        year=opt.get('year', ''),
+                        journal=opt.get('journal', ''),
+                        publisher=opt.get('publisher', ''),
+                        volume=opt.get('volume', ''),
+                        issue=opt.get('issue', ''),
+                        pages=opt.get('pages', ''),
+                        doi=opt.get('doi', ''),
+                        place=opt.get('place', ''),
+                    )
+                    if meta.has_minimum_data():
+                        formatted = formatter.format(meta)
+                        # Insert AI results at the FRONT (more likely to be correct for keyword searches)
+                        results.insert(0, (meta, formatted, "AI Lookup"))
+                        print(f"[UnifiedRouter] AI found: {meta.title[:50]}...")
+        except Exception as e:
+            print(f"[UnifiedRouter] AI enhancement error: {e}")
+    
     return results[:limit]
 
 

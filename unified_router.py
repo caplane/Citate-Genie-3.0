@@ -4,6 +4,7 @@ citeflex/unified_router.py
 Unified routing logic combining the best of CiteFlex Pro and Cite Fix Pro.
 
 Version History:
+    2025-12-12 V3.5: Fixed import paths for Claude/Gemini routers (routers.claude, routers.gemini)
     2025-12-06 13:45 V3.4: Added citation parser to extract metadata from already-formatted
                            citations. Reformats without database search when citation is complete.
                            Preserves authoritative content while applying consistent style.
@@ -68,7 +69,7 @@ AI_ROUTER = os.environ.get('AI_ROUTER', 'claude').lower()  # 'claude' or 'gemini
 
 # Try to import Claude router (primary)
 try:
-    from claude_router import classify_with_claude, get_citation_options
+    from routers.claude import classify_with_claude, get_citation_options
     CLAUDE_AVAILABLE = True
 except ImportError:
     CLAUDE_AVAILABLE = False
@@ -76,7 +77,7 @@ except ImportError:
 
 # Try to import Gemini router (fallback)
 try:
-    from gemini_router import classify_with_gemini
+    from routers.gemini import classify_with_gemini
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False

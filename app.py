@@ -5,6 +5,10 @@ citeflex/app.py
 Flask application for CiteFlex Unified.
 
 Version History:
+    2025-12-12: Added document topic extraction for AI context.
+                Extracts keywords from document body to help AI disambiguate
+                between authors with same name in different fields.
+                Import: topic_extractor.get_document_context()
     2025-12-11: Fixed Author-Date UX to match Endnote UX:
                 - Added 'recommendation' field (AI's best guess)
                 - Original text now appears as first option (id=0)
@@ -48,6 +52,7 @@ from werkzeug.utils import secure_filename
 from unified_router import get_citation, get_multiple_citations, get_parenthetical_options, get_parenthetical_metadata
 from formatters.base import get_formatter
 from document_processor import process_document
+from processors.topic_extractor import get_document_context
 
 # =============================================================================
 # APP CONFIGURATION
@@ -657,158 +662,6 @@ def format_citation():
         }), 500
 
 
-# Style to output type mapping
-FOOTNOTE_STYLES = ['Chicago Manual of Style', 'Bluebook', 'OSCOLA', 'Turabian', 'Vancouver']
-AUTHOR_DATE_STYLES = ['APA 7', 'MLA 9', 'Chicago Author-Date', 'Harvard', 'APA', 'MLA', 'apa', 'mla']
-
-def get_output_type(style: str) -> str:
-    """Determine if style uses footnotes or author-date citations."""
-    if any(s.lower() in style.lower() for s in ['apa', 'mla', 'harvard', 'author-date']):
-        return 'author-date'
-    return 'footnote'
-
-def get_bibliography_title(style: str) -> str:
-    """Get the appropriate bibliography title for the style."""
-    style_lower = style.lower()
-    if 'mla' in style_lower:
-        return 'Works Cited'
-    elif 'apa' in style_lower or 'harvard' in style_lower or 'author-date' in style_lower:
-        return 'References'
-    return 'Bibliography'
-
-
-@app.route('/api/process-unified', methods=['POST'])
-def process_unified():
-    """
-    Unified document processing API.
-    
-    Automatically routes to footnote or author-date processing based on style.
-    
-    Expects multipart form with:
-    - file: .docx document
-    - style: citation style
-    
-    Returns:
-    {
-        "success": true,
-        "session_id": "uuid",
-        "output_type": "footnote" or "author-date",
-        "stats": { "citations_found", "citations_resolved" },
-        "bibliography_title": "Bibliography" or "References"
-    }
-    """
-    try:
-        if 'file' not in request.files:
-            return jsonify({
-                'success': False,
-                'error': 'No file provided'
-            }), 400
-        
-        file = request.files['file']
-        
-        if file.filename == '':
-            return jsonify({
-                'success': False,
-                'error': 'No file selected'
-            }), 400
-        
-        if not allowed_file(file.filename):
-            return jsonify({
-                'success': False,
-                'error': 'Only .docx files are supported'
-            }), 400
-        
-        style = request.form.get('style', 'Chicago Manual of Style')
-        output_type = get_output_type(style)
-        bibliography_title = get_bibliography_title(style)
-        
-        print(f"[API] process-unified: style={style}, output_type={output_type}")
-        
-        # Read file bytes
-        file_bytes = file.read()
-        
-        if output_type == 'author-date':
-            # Use author-date processing
-            from processors.author_year_extractor import AuthorDateExtractor
-            
-            extractor = AuthorDateExtractor()
-            extracted_citations = extractor.extract_citations_from_docx(file_bytes)
-            unique_citations = extractor.get_unique_citations(extracted_citations)
-            
-            # Create session
-            session_id = sessions.create()
-            sessions.set(session_id, 'original_bytes', file_bytes)
-            sessions.set(session_id, 'style', style)
-            sessions.set(session_id, 'mode', 'author-date')
-            sessions.set(session_id, 'filename', secure_filename(file.filename))
-            
-            print(f"[API] Author-date: found {len(unique_citations)} unique citations")
-            
-            return jsonify({
-                'success': True,
-                'session_id': session_id,
-                'output_type': 'author-date',
-                'stats': {
-                    'citations_found': len(unique_citations),
-                    'citations_resolved': len(unique_citations)  # Will be updated after processing
-                },
-                'bibliography_title': bibliography_title
-            })
-        
-        else:
-            # Use footnote/endnote processing
-            from document_processor import process_document
-            
-            processed_bytes, results = process_document(
-                file_bytes,
-                style=style,
-                add_links=True
-            )
-            
-            # Create session
-            session_id = sessions.create()
-            sessions.set(session_id, 'processed_doc', processed_bytes)
-            sessions.set(session_id, 'original_bytes', file_bytes)
-            sessions.set(session_id, 'style', style)
-            sessions.set(session_id, 'mode', 'footnote')
-            sessions.set(session_id, 'filename', secure_filename(file.filename))
-            sessions.set(session_id, 'results', [
-                {
-                    'id': idx + 1,
-                    'original': r.original,
-                    'formatted': r.formatted,
-                    'success': r.success,
-                    'error': r.error,
-                    'form': r.citation_form,
-                    'type': r.citation_type.name.lower() if hasattr(r, 'citation_type') and r.citation_type else 'unknown'
-                }
-                for idx, r in enumerate(results)
-            ])
-            
-            success_count = sum(1 for r in results if r.success)
-            print(f"[API] Footnote: processed {len(results)} notes, {success_count} resolved")
-            
-            return jsonify({
-                'success': True,
-                'session_id': session_id,
-                'output_type': 'footnote',
-                'stats': {
-                    'citations_found': len(results),
-                    'citations_resolved': success_count
-                },
-                'bibliography_title': bibliography_title
-            })
-        
-    except Exception as e:
-        print(f"[API] Error in /api/process-unified: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
 @app.route('/api/process', methods=['POST'])
 def process_doc():
     """
@@ -1162,6 +1015,10 @@ def process_author_date():
         # Read file bytes
         file_bytes = file.read()
         
+        # Extract document topics for AI context (improves accuracy)
+        document_context = get_document_context(file_bytes)
+        print(f"[API] Document context: {document_context[:100]}..." if document_context else "[API] No document context extracted")
+        
         # Extract author-date citations from document BODY TEXT
         from processors.author_year_extractor import AuthorDateExtractor
         
@@ -1191,8 +1048,8 @@ def process_author_date():
             note_id = idx + 1
             
             try:
-                # Get raw metadata (no formatting yet)
-                metadata_list = get_parenthetical_metadata(original_text, limit=4)
+                # Get raw metadata (no formatting yet) - pass document context for better accuracy
+                metadata_list = get_parenthetical_metadata(original_text, limit=4, document_context=document_context)
                 
                 # Build options with raw metadata
                 options = [{
@@ -1317,13 +1174,28 @@ def accept_reference():
     Accept/save a formatted reference for author-date mode.
     
     Called when user clicks Accept & Save OR auto-saves on navigation.
-    Persists the formatted text to server session.
+    Formats the selected option and persists to server session.
     
-    Request JSON:
+    Request JSON (NEW format - preferred):
+    {
+        "session_id": "uuid",
+        "citation_id": 1,
+        "selected_option": 1,
+        "style": "APA 7"
+    }
+    
+    Request JSON (LEGACY format - still supported):
     {
         "session_id": "uuid",
         "reference_id": 1,
         "formatted": "Simonton, D. K. (1992). The social context..."
+    }
+    
+    Response:
+    {
+        "success": true,
+        "reference_id": 1,
+        "formatted": "Simonton, D. K. (1992). ..."
     }
     """
     try:
@@ -1336,13 +1208,11 @@ def accept_reference():
             }), 400
         
         session_id = data.get('session_id')
-        reference_id = data.get('reference_id')
-        formatted = data.get('formatted', '')
         
-        if not session_id or reference_id is None:
+        if not session_id:
             return jsonify({
                 'success': False,
-                'error': 'Missing session_id or reference_id'
+                'error': 'Missing session_id'
             }), 400
         
         session_data = sessions.get(session_id)
@@ -1352,6 +1222,98 @@ def accept_reference():
                 'success': False,
                 'error': 'Session not found or expired'
             }), 404
+        
+        # Check which format we received
+        if 'selected_option' in data:
+            # NEW FORMAT: Format on-demand from selection
+            citation_id = data.get('citation_id')
+            selected_option = data.get('selected_option', 0)
+            style = data.get('style') or session_data.get('style', 'APA 7')
+            
+            if citation_id is None:
+                return jsonify({
+                    'success': False,
+                    'error': 'Missing citation_id'
+                }), 400
+            
+            # Find the citation in session
+            citations = session_data.get('citations', [])
+            citation = None
+            for c in citations:
+                if c.get('id') == citation_id or c.get('note_id') == citation_id:
+                    citation = c
+                    break
+            
+            if not citation:
+                return jsonify({
+                    'success': False,
+                    'error': f'Citation {citation_id} not found in session'
+                }), 404
+            
+            # Get the selected option
+            options = citation.get('options', [])
+            if selected_option < 0 or selected_option >= len(options):
+                return jsonify({
+                    'success': False,
+                    'error': f'Invalid option index {selected_option}'
+                }), 400
+            
+            option = options[selected_option]
+            
+            # Check if this is "Keep Original"
+            if option.get('is_original'):
+                formatted = citation.get('original', '')
+                reference_id = citation_id
+            else:
+                # Reconstruct CitationMetadata from option data
+                from models import CitationMetadata, CitationType
+                
+                # Map citation_type string to enum
+                type_str = option.get('citation_type', 'unknown').lower()
+                type_map = {
+                    'journal': CitationType.JOURNAL,
+                    'book': CitationType.BOOK,
+                    'legal': CitationType.LEGAL,
+                    'medical': CitationType.MEDICAL,
+                    'newspaper': CitationType.NEWSPAPER,
+                    'government': CitationType.GOVERNMENT,
+                    'url': CitationType.URL,
+                }
+                citation_type = type_map.get(type_str, CitationType.JOURNAL)
+                
+                # Build metadata
+                metadata = CitationMetadata(
+                    citation_type=citation_type,
+                    title=option.get('title', ''),
+                    authors=option.get('authors', []),
+                    year=option.get('year', ''),
+                    journal=option.get('journal', ''),
+                    publisher=option.get('publisher', ''),
+                    volume=option.get('volume', ''),
+                    issue=option.get('issue', ''),
+                    pages=option.get('pages', ''),
+                    doi=option.get('doi', ''),
+                    url=option.get('url', ''),
+                    source_engine=option.get('source', 'Unknown'),
+                )
+                
+                # Format using specified style
+                formatter = get_formatter(style)
+                formatted = formatter.format(metadata)
+                reference_id = citation_id
+            
+            print(f"[API] Formatted citation {citation_id} option {selected_option}: {formatted[:60]}...")
+            
+        else:
+            # LEGACY FORMAT: Pre-formatted text provided
+            reference_id = data.get('reference_id')
+            formatted = data.get('formatted', '')
+            
+            if reference_id is None:
+                return jsonify({
+                    'success': False,
+                    'error': 'Missing reference_id'
+                }), 400
         
         # Get or create accepted_references dict
         accepted_refs = session_data.get('accepted_references', {})
@@ -1369,11 +1331,14 @@ def accept_reference():
         
         return jsonify({
             'success': True,
-            'reference_id': reference_id
+            'reference_id': reference_id,
+            'formatted': formatted
         })
         
     except Exception as e:
         print(f"[API] Error in /api/accept-reference: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'error': str(e)
@@ -1553,11 +1518,6 @@ def finalize_author_date():
                         zf.write(file_path, arcname)
             
             output_buffer.seek(0)
-            
-            # Apply LinkActivator to make URLs clickable (same as footnote workflow)
-            from document_processor import LinkActivator
-            output_buffer = LinkActivator.process(output_buffer)
-            
             processed_bytes = output_buffer.read()
             
             # Save to session for download

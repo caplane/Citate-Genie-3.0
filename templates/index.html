@@ -1164,7 +1164,7 @@
         // Update progress badge for footnote mode
         function fnUpdateProgressBadge() {
             const accepted = currentCitations.filter(c => c.success).length;
-            document.getElementById('progress-count').textContent = `${accepted}/${currentCitations.length} reviewed`;
+            document.getElementById('progress-text').textContent = `${accepted}/${currentCitations.length} reviewed`;
         }
         
         // Copy to clipboard

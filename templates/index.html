@@ -9,14 +9,15 @@
     <style>
         /*
          * CitateGenie - Unified Citation Workbench
-         * Version: 3.0.0
+         * Version: 3.1.0
          * Updated: 2025-12-12
          * 
-         * V3.0.0 Changes:
-         * - REMOVED mode toggle - style determines output format
-         * - Single /api/process-unified endpoint
-         * - Style-driven workflow: footnote or author-date based on style
-         * - Simplified UI with automatic format detection
+         * V3.1.0 Changes:
+         * - FULL user-in-the-loop review for author-date mode
+         * - Citation list with status indicators
+         * - Options panel for selecting alternatives
+         * - Accept & Save / Next workflow
+         * - Proper finalize → download flow
          */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300;1,400&display=swap');
         
@@ -47,16 +48,11 @@
         .badge-journal { background: #d1fae5; color: #065f46; }
         .badge-book { background: #dbeafe; color: #1e40af; }
         .badge-medical { background: #fce7f3; color: #9d174d; }
-        .badge-interview { background: #e0e7ff; color: #3730a3; }
-        .badge-newspaper { background: #f3e8ff; color: #6b21a8; }
-        .badge-government { background: #fee2e2; color: #991b1b; }
-        .badge-url { background: #ecfdf5; color: #047857; }
         .badge-unknown { background: #f1f5f9; color: #475569; }
         
         /* Status indicators */
-        .status-success { border-left: 3px solid #22c55e; background: #f0fdf4; }
-        .status-error { border-left: 3px solid #ef4444; background: #fef2f2; }
-        .status-pending { border-left: 3px solid #f59e0b; background: #fffbeb; }
+        .status-success { border-left: 3px solid #22c55e; }
+        .status-pending { border-left: 3px solid #f59e0b; }
         .status-active { border-left: 3px solid #3b82f6; background: #eff6ff; }
         
         /* Style groups */
@@ -83,20 +79,34 @@
         .output-footnote { background: #dbeafe; color: #1e40af; }
         .output-author-date { background: #d1fae5; color: #047857; }
         
-        /* Reference item */
-        .reference-item {
-            padding: 12px;
+        /* Citation item in list */
+        .citation-item {
+            padding: 10px 12px;
             border-radius: 8px;
             border: 1px solid #e2e8f0;
             background: white;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             transition: all 0.2s;
             cursor: pointer;
         }
-        .reference-item:hover { border-color: #3b82f6; }
-        .reference-item.resolved { border-left: 3px solid #22c55e; }
-        .reference-item.failed { border-left: 3px solid #ef4444; background: #fef2f2; }
-        .reference-item.active { border-color: #3b82f6; ring: 2px; ring-color: #3b82f6; background: #eff6ff; }
+        .citation-item:hover { border-color: #94a3b8; }
+        .citation-item.accepted { border-left: 3px solid #22c55e; background: #f0fdf4; }
+        .citation-item.active { border-color: #3b82f6; background: #eff6ff; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
+        .citation-item.pending { border-left: 3px solid #f59e0b; }
+        
+        /* Option card */
+        .option-card {
+            padding: 12px 16px;
+            border-radius: 10px;
+            border: 2px solid #e2e8f0;
+            background: white;
+            margin-bottom: 10px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .option-card:hover { border-color: #3b82f6; background: #f8fafc; }
+        .option-card.selected { border-color: #3b82f6; background: #eff6ff; }
+        .option-card.original { border-style: dashed; background: #fafafa; }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
@@ -109,7 +119,7 @@
             </div>
             <div>
                 <h1 class="text-xl font-bold text-gray-900 tracking-tight">CitateGenie</h1>
-                <p class="text-xs text-gray-500 font-medium">Style-Driven Citation Processor <span class="text-blue-600">v3.0</span></p>
+                <p class="text-xs text-gray-500 font-medium">Citation Workbench <span class="text-blue-600">v3.1</span></p>
             </div>
         </div>
         
@@ -118,7 +128,10 @@
                 <i class="fas fa-superscript"></i>
                 <span>Footnotes</span>
             </div>
-            <button onclick="window.location.reload()" class="text-gray-500 hover:text-gray-700 font-medium text-sm px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+            <div id="progress-badge" class="hidden text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium">
+                <span id="progress-text">0/0 reviewed</span>
+            </div>
+            <button onclick="resetDocument()" class="text-gray-500 hover:text-gray-700 font-medium text-sm px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors">
                 <i class="fas fa-redo mr-1"></i> Reset
             </button>
         </div>
@@ -133,10 +146,10 @@
             <!-- Upload Area -->
             <div class="p-4 border-b border-gray-100 bg-gradient-to-b from-gray-50 to-white">
                 <input type="file" id="file-input" class="hidden" accept=".docx">
-                <button onclick="document.getElementById('file-input').click()" class="w-full border-2 border-dashed border-gray-300 rounded-xl p-5 text-center hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer group flex flex-col items-center gap-2">
+                <button onclick="document.getElementById('file-input').click()" id="upload-btn" class="w-full border-2 border-dashed border-gray-300 rounded-xl p-5 text-center hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer group flex flex-col items-center gap-2">
                     <i class="fas fa-cloud-upload-alt text-2xl text-gray-400 group-hover:text-blue-500 transition-colors"></i>
                     <span class="text-sm font-medium text-gray-600 group-hover:text-blue-700">Upload Document (.docx)</span>
-                    <span id="upload-hint" class="text-xs text-gray-400">Style determines output format automatically</span>
+                    <span class="text-xs text-gray-400">Style determines output format</span>
                 </button>
                 
                 <!-- Style Selector -->
@@ -164,7 +177,7 @@
                 </div>
                 
                 <div id="upload-loading" class="hidden mt-3 flex items-center justify-center gap-2 text-xs text-gray-500">
-                    <div class="loader w-4 h-4"></div> <span>Parsing document...</span>
+                    <div class="loader w-4 h-4"></div> <span>Processing document...</span>
                 </div>
                 
                 <div id="file-info" class="hidden mt-3 flex items-center justify-between bg-blue-50 px-3 py-2 rounded-lg">
@@ -174,6 +187,7 @@
                     </button>
                 </div>
                 
+                <!-- Download Button (shown after all reviewed) -->
                 <div id="download-area" class="hidden mt-3">
                     <button onclick="downloadDocument()" class="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-medium py-2.5 px-4 rounded-lg transition-all text-sm shadow-sm flex items-center justify-center gap-2">
                         <i class="fas fa-file-download"></i> Download Processed Document
@@ -183,9 +197,9 @@
 
             <!-- Stats Bar -->
             <div class="px-4 py-2 bg-white border-b border-gray-100 flex justify-between items-center">
-                <span id="list-label" class="text-xs font-bold text-gray-400 uppercase tracking-wider">Citations</span>
+                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Citations</span>
                 <div class="flex items-center gap-2">
-                    <span id="success-count" class="hidden text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">0 done</span>
+                    <span id="accepted-count" class="hidden text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">0 accepted</span>
                     <span id="citation-count" class="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 font-medium">0 total</span>
                 </div>
             </div>
@@ -195,30 +209,30 @@
                 <div id="list-empty" class="text-center py-12 text-gray-400">
                     <i class="fas fa-inbox text-4xl mb-3 opacity-30"></i>
                     <p class="text-sm font-medium">Upload a document to begin</p>
-                    <p class="text-xs mt-1 text-gray-300">Style determines footnotes vs. author-date</p>
+                    <p class="text-xs mt-1 text-gray-300">Citations will appear here for review</p>
                 </div>
             </div>
         </aside>
         
-        <!-- Right Panel: Info & Success State -->
+        <!-- Right Panel: Editor / Options -->
         <section class="flex-1 flex flex-col bg-gray-50 overflow-hidden">
             
             <!-- Empty State (before upload) -->
-            <div id="editor-empty" class="flex-1 flex items-center justify-center">
+            <div id="panel-empty" class="flex-1 flex items-center justify-center">
                 <div class="text-center max-w-md mx-auto p-8">
                     <div class="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
                         <i class="fas fa-file-alt text-3xl text-blue-500"></i>
                     </div>
                     <h2 class="text-xl font-bold text-gray-700 mb-2">Upload a Document</h2>
                     <p class="text-gray-500 text-sm mb-6">
-                        CitateGenie automatically detects citation format from your chosen style.
+                        CitateGenie will extract citations and help you format them correctly.
                     </p>
                     <div class="bg-white rounded-xl p-4 border border-gray-200 text-left">
                         <p class="text-xs font-semibold text-gray-600 mb-2">How it works:</p>
                         <ol class="text-xs text-gray-500 space-y-2">
                             <li class="flex items-start gap-2">
                                 <span class="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold">1</span>
-                                <span>Select your citation style (APA, Chicago, MLA, etc.)</span>
+                                <span>Select your citation style (APA, Chicago, etc.)</span>
                             </li>
                             <li class="flex items-start gap-2">
                                 <span class="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold">2</span>
@@ -226,7 +240,7 @@
                             </li>
                             <li class="flex items-start gap-2">
                                 <span class="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold">3</span>
-                                <span>Citations are processed automatically based on style</span>
+                                <span>Review each citation and select the best match</span>
                             </li>
                             <li class="flex items-start gap-2">
                                 <span class="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold">4</span>
@@ -234,49 +248,83 @@
                             </li>
                         </ol>
                     </div>
-                    
-                    <!-- Style explanations -->
-                    <div class="mt-6 grid grid-cols-2 gap-3 text-left">
-                        <div class="bg-blue-50 rounded-lg p-3 border border-blue-100">
-                            <div class="flex items-center gap-2 mb-1">
-                                <i class="fas fa-superscript text-blue-600"></i>
-                                <span class="text-xs font-bold text-blue-800">Footnote Styles</span>
-                            </div>
-                            <p class="text-[10px] text-blue-600">Chicago Notes, Bluebook, OSCOLA</p>
-                            <p class="text-[10px] text-blue-500 mt-1">→ Formats your footnotes/endnotes</p>
+                </div>
+            </div>
+            
+            <!-- Editor Panel (shown during review) -->
+            <div id="panel-editor" class="hidden flex-1 flex flex-col overflow-hidden">
+                
+                <!-- Editor Header -->
+                <div class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <span id="editor-citation-num" class="text-xs font-bold text-white bg-blue-600 px-2.5 py-1 rounded-full">#1</span>
+                        <div>
+                            <h3 class="font-semibold text-gray-800">Review Citation</h3>
+                            <p class="text-xs text-gray-500">Select the correct reference from options below</p>
                         </div>
-                        <div class="bg-green-50 rounded-lg p-3 border border-green-100">
-                            <div class="flex items-center gap-2 mb-1">
-                                <i class="fas fa-user-clock text-green-600"></i>
-                                <span class="text-xs font-bold text-green-800">Author-Date Styles</span>
-                            </div>
-                            <p class="text-[10px] text-green-600">APA, MLA, Chicago AD, Harvard</p>
-                            <p class="text-[10px] text-green-500 mt-1">→ In-text cites + References</p>
-                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="prevCitation()" id="btn-prev" class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed" disabled>
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <span id="editor-position" class="text-xs text-gray-500 min-w-[60px] text-center">1 of 5</span>
+                        <button onclick="nextCitation()" id="btn-next" class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Original Citation Display -->
+                <div class="bg-gradient-to-r from-amber-50 to-yellow-50 border-b border-amber-200 px-6 py-4">
+                    <p class="text-xs font-semibold text-amber-700 uppercase tracking-wider mb-1">Original in Document</p>
+                    <p id="original-citation-text" class="text-gray-800 font-medium">(Smith, 2020)</p>
+                </div>
+                
+                <!-- Options Container -->
+                <div class="flex-1 overflow-y-auto p-6">
+                    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                        <i class="fas fa-list-ul mr-1"></i> Select the Correct Reference
+                    </p>
+                    <div id="options-container">
+                        <!-- Options will be rendered here -->
+                    </div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="bg-white border-t border-gray-200 px-6 py-4 flex items-center justify-between gap-4">
+                    <button onclick="keepOriginal()" class="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors">
+                        <i class="fas fa-undo mr-1"></i> Keep Original
+                    </button>
+                    <div class="flex items-center gap-3">
+                        <button onclick="acceptAndNext()" id="btn-accept-next" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium rounded-lg shadow-sm transition-all flex items-center gap-2">
+                            <i class="fas fa-check"></i>
+                            <span>Accept & Next</span>
+                            <i class="fas fa-chevron-right text-xs opacity-70"></i>
+                        </button>
                     </div>
                 </div>
             </div>
             
-            <!-- Success State (after processing) -->
-            <div id="success-panel" class="hidden flex-1 flex items-center justify-center">
+            <!-- Success Panel (all reviewed) -->
+            <div id="panel-success" class="hidden flex-1 flex items-center justify-center">
                 <div class="text-center max-w-lg mx-auto p-8">
                     <div class="w-24 h-24 bg-gradient-to-br from-green-400 to-emerald-500 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg">
                         <i class="fas fa-check text-4xl text-white"></i>
                     </div>
-                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Document Processed!</h2>
-                    <p id="success-message" class="text-gray-500 mb-6">
-                        Your citations have been formatted and your document is ready.
+                    <h2 class="text-2xl font-bold text-gray-800 mb-2">All Citations Reviewed!</h2>
+                    <p class="text-gray-500 mb-6">
+                        Your document is ready for download with properly formatted references.
                     </p>
                     
                     <div class="bg-white rounded-xl border border-gray-200 p-6 mb-6">
                         <div class="grid grid-cols-2 gap-4 text-center">
                             <div>
-                                <p id="stat-found" class="text-3xl font-bold text-gray-800">0</p>
+                                <p id="final-total" class="text-3xl font-bold text-gray-800">0</p>
                                 <p class="text-xs text-gray-500">Citations Found</p>
                             </div>
                             <div>
-                                <p id="stat-resolved" class="text-3xl font-bold text-green-600">0</p>
-                                <p class="text-xs text-gray-500">Successfully Resolved</p>
+                                <p id="final-accepted" class="text-3xl font-bold text-green-600">0</p>
+                                <p class="text-xs text-gray-500">References Added</p>
                             </div>
                         </div>
                     </div>
@@ -299,12 +347,12 @@
                         <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full mb-4">
                             <i class="fas fa-magic text-white text-2xl animate-pulse"></i>
                         </div>
-                        <h3 id="processing-title" class="text-xl font-bold text-gray-800">Processing Document</h3>
-                        <p id="processing-subtitle" class="text-gray-500 text-sm mt-1">Analyzing your citations...</p>
+                        <h3 class="text-xl font-bold text-gray-800">Processing Document</h3>
+                        <p class="text-gray-500 text-sm mt-1">Looking up your citations...</p>
                     </div>
                     
                     <div class="space-y-3">
-                        <div id="processing-status" class="text-sm text-gray-600">
+                        <div class="text-sm text-gray-600">
                             <span class="inline-block w-2 h-2 bg-blue-500 rounded-full animate-ping mr-2"></span>
                             <span id="processing-step">Extracting citations...</span>
                         </div>
@@ -314,7 +362,7 @@
                         </div>
                         
                         <p class="text-xs text-gray-400 mt-4">
-                            This may take a moment for complex documents
+                            This may take a moment for documents with many citations
                         </p>
                     </div>
                 </div>
@@ -324,15 +372,17 @@
 
     <script>
         /*
-         * CitateGenie 3.0 - Frontend JavaScript
-         * Style-driven processing - no mode selection
+         * CitateGenie 3.1 - Full Review Workflow
+         * User-in-the-loop citation selection
          */
         
         // ========== STATE ==========
         let currentSessionId = null;
         let currentCitations = [];
         let activeCitationIndex = -1;
-        let outputType = 'footnote';  // Will be set by style
+        let selectedOptionIndex = 0;
+        let outputType = 'footnote';
+        let currentStyle = 'Chicago Manual of Style';
         
         // Style info mapping
         const STYLE_INFO = {
@@ -347,21 +397,16 @@
         
         // ========== INITIALIZATION ==========
         document.addEventListener('DOMContentLoaded', () => {
-            // File input handler
             document.getElementById('file-input').addEventListener('change', handleFileUpload);
-            
-            // Initialize style info
             updateStyleInfo();
         });
         
         // ========== STYLE INFO ==========
         function updateStyleInfo() {
-            const style = document.getElementById('style-selector').value;
-            const info = STYLE_INFO[style] || { type: 'footnote', bib: 'Bibliography' };
-            
+            currentStyle = document.getElementById('style-selector').value;
+            const info = STYLE_INFO[currentStyle] || { type: 'footnote', bib: 'Bibliography' };
             outputType = info.type;
             
-            // Update indicator
             const typeEl = document.getElementById('style-output-type');
             const bibEl = document.getElementById('style-bib-title');
             
@@ -374,18 +419,6 @@
             }
             
             bibEl.textContent = `→ ${info.bib}`;
-            
-            // Update header badge if visible
-            const headerBadge = document.getElementById('output-type-badge');
-            if (!headerBadge.classList.contains('hidden')) {
-                if (info.type === 'footnote') {
-                    headerBadge.innerHTML = '<i class="fas fa-superscript"></i><span>Footnotes</span>';
-                    headerBadge.className = 'output-indicator output-footnote';
-                } else {
-                    headerBadge.innerHTML = '<i class="fas fa-user-clock"></i><span>Author-Date</span>';
-                    headerBadge.className = 'output-indicator output-author-date';
-                }
-            }
         }
         
         // ========== FILE UPLOAD ==========
@@ -393,27 +426,22 @@
             const file = event.target.files[0];
             if (!file) return;
             
-            // Validate file type
             if (!file.name.endsWith('.docx')) {
                 alert('Please upload a .docx file');
                 return;
             }
             
-            // Show loading state
+            // Show loading
             document.getElementById('upload-loading').classList.remove('hidden');
-            document.getElementById('file-info').classList.add('hidden');
-            document.getElementById('download-area').classList.add('hidden');
-            
-            // Show processing overlay
+            document.getElementById('upload-btn').classList.add('hidden');
             showProcessingOverlay();
             
             const formData = new FormData();
             formData.append('file', file);
-            const selectedStyle = document.getElementById('style-selector').value;
-            formData.append('style', selectedStyle);
+            formData.append('style', currentStyle);
             
             // Determine endpoint based on style type
-            const styleInfo = STYLE_INFO[selectedStyle] || { type: 'footnote' };
+            const styleInfo = STYLE_INFO[currentStyle] || { type: 'footnote' };
             const endpoint = styleInfo.type === 'author-date' 
                 ? '/api/process-author-date' 
                 : '/api/process';
@@ -421,13 +449,12 @@
             try {
                 updateProcessingStatus('Uploading document...', 20);
                 
-                // Use the appropriate endpoint based on style
                 const response = await fetch(endpoint, {
                     method: 'POST',
                     body: formData
                 });
                 
-                updateProcessingStatus('Processing citations...', 50);
+                updateProcessingStatus('Processing citations...', 60);
                 
                 const data = await response.json();
                 
@@ -435,24 +462,18 @@
                     throw new Error(data.error || 'Processing failed');
                 }
                 
-                updateProcessingStatus('Formatting results...', 80);
+                updateProcessingStatus('Preparing review...', 90);
                 
-                // Store session info
+                // Store session and citations
                 currentSessionId = data.session_id;
-                outputType = styleInfo.type;
-                
-                // Get stats from response (handle both endpoint formats)
-                const stats = data.stats || {};
-                const citationsFound = stats.total || stats.citations_found || 0;
-                const citationsResolved = stats.success || stats.resolved || stats.with_options || stats.citations_resolved || 0;
+                currentCitations = data.citations || [];
                 
                 // Update UI
                 document.getElementById('file-name-display').textContent = file.name;
                 document.getElementById('file-info').classList.remove('hidden');
-                document.getElementById('download-area').classList.remove('hidden');
                 document.getElementById('upload-loading').classList.add('hidden');
                 
-                // Show output type in header
+                // Show output type badge
                 const headerBadge = document.getElementById('output-type-badge');
                 headerBadge.classList.remove('hidden');
                 if (outputType === 'footnote') {
@@ -463,51 +484,99 @@
                     headerBadge.className = 'output-indicator output-author-date';
                 }
                 
-                // Update stats
-                document.getElementById('citation-count').textContent = `${citationsFound} total`;
-                if (citationsResolved > 0) {
-                    document.getElementById('success-count').textContent = `${citationsResolved} resolved`;
-                    document.getElementById('success-count').classList.remove('hidden');
+                // Update counts
+                document.getElementById('citation-count').textContent = `${currentCitations.length} total`;
+                
+                // Check if author-date mode with citations to review
+                if (outputType === 'author-date' && currentCitations.length > 0) {
+                    // Show review UI
+                    renderCitationList();
+                    selectCitation(0);
+                    
+                    document.getElementById('panel-empty').classList.add('hidden');
+                    document.getElementById('panel-editor').classList.remove('hidden');
+                    document.getElementById('panel-success').classList.add('hidden');
+                    document.getElementById('list-empty').classList.add('hidden');
+                    
+                    // Show progress badge
+                    document.getElementById('progress-badge').classList.remove('hidden');
+                    updateProgressBadge();
+                    
+                } else if (outputType === 'footnote') {
+                    // Footnote mode - show success directly (auto-processed)
+                    showFootnoteSuccess(data);
+                } else {
+                    // No citations found
+                    alert('No citations found in document');
+                    resetDocument();
                 }
                 
-                // Show processing summary instead of citation list
-                showProcessingSummary(stats, data.bibliography_title || 'References');
-                
-                // Hide empty state, show success panel
-                document.getElementById('list-empty').classList.add('hidden');
-                document.getElementById('editor-empty').classList.add('hidden');
-                document.getElementById('success-panel').classList.remove('hidden');
-                
-                // Update success panel stats
-                document.getElementById('stat-found').textContent = citationsFound;
-                document.getElementById('stat-resolved').textContent = citationsResolved;
-                
-                // Update success message based on output type
-                const successMsg = outputType === 'footnote'
-                    ? `Your footnotes have been formatted in ${style}.`
-                    : `Your citations have been formatted with a ${data.bibliography_title || 'References'} section.`;
-                document.getElementById('success-message').textContent = successMsg;
-                
-                updateProcessingStatus('Complete!', 100);
-                
-                // Hide overlay after brief delay
-                setTimeout(hideProcessingOverlay, 500);
+                hideProcessingOverlay();
                 
             } catch (error) {
                 console.error('Upload error:', error);
                 hideProcessingOverlay();
                 document.getElementById('upload-loading').classList.add('hidden');
+                document.getElementById('upload-btn').classList.remove('hidden');
                 alert('Error processing document: ' + error.message);
             }
         }
         
-        // ========== CITATION LIST (placeholder for future enhancement) ==========
+        // ========== CITATION LIST ==========
         function renderCitationList() {
-            // Will be implemented when backend returns individual citations
-            console.log('Citation list rendering - future feature');
+            const container = document.getElementById('citation-list');
+            
+            if (currentCitations.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-inbox text-4xl mb-3 opacity-30"></i>
+                        <p class="text-sm font-medium">No citations found</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            currentCitations.forEach((cite, idx) => {
+                const isActive = idx === activeCitationIndex;
+                const isAccepted = cite.accepted;
+                
+                let statusClass = 'pending';
+                let statusIcon = '<i class="fas fa-clock text-amber-500"></i>';
+                
+                if (isAccepted) {
+                    statusClass = 'accepted';
+                    statusIcon = '<i class="fas fa-check-circle text-green-500"></i>';
+                }
+                if (isActive) {
+                    statusClass += ' active';
+                }
+                
+                html += `
+                    <div class="citation-item ${statusClass}" onclick="selectCitation(${idx})" id="cite-${idx}">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="text-xs font-bold text-gray-400">#${idx + 1}</span>
+                                    ${statusIcon}
+                                </div>
+                                <p class="text-sm text-gray-800 truncate font-medium">${escapeHtml(cite.original || '')}</p>
+                                ${isAccepted && cite.formatted ? `
+                                    <p class="text-xs text-green-600 mt-1 truncate">✓ ${escapeHtml(truncate(cite.formatted, 50))}</p>
+                                ` : `
+                                    <p class="text-xs text-gray-400 mt-1">${cite.options?.length || 0} option${cite.options?.length !== 1 ? 's' : ''} found</p>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+            updateAcceptedCount();
         }
         
-        // ========== CITATION EDITOR ==========
+        // ========== SELECT CITATION ==========
         function selectCitation(idx) {
             if (idx < 0 || idx >= currentCitations.length) return;
             
@@ -515,21 +584,197 @@
             const cite = currentCitations[idx];
             
             // Update list highlighting
-            document.querySelectorAll('.reference-item').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.citation-item').forEach((el, i) => {
+                el.classList.remove('active');
+                if (i === idx) el.classList.add('active');
+            });
+            
+            // Scroll active item into view
             const activeEl = document.getElementById(`cite-${idx}`);
-            if (activeEl) activeEl.classList.add('active');
+            if (activeEl) {
+                activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
             
-            // Update editor
-            document.getElementById('active-citation-id').textContent = `#${idx + 1}`;
+            // Update editor header
+            document.getElementById('editor-citation-num').textContent = `#${idx + 1}`;
+            document.getElementById('editor-position').textContent = `${idx + 1} of ${currentCitations.length}`;
+            document.getElementById('original-citation-text').textContent = cite.original || '(Unknown)';
             
-            const typeEl = document.getElementById('active-citation-type');
-            typeEl.textContent = cite.type || 'unknown';
-            typeEl.className = `text-[10px] font-bold uppercase px-2 py-0.5 rounded badge-${cite.type || 'unknown'}`;
+            // Update nav buttons
+            document.getElementById('btn-prev').disabled = idx === 0;
+            document.getElementById('btn-next').disabled = idx === currentCitations.length - 1;
             
-            document.getElementById('original-citation').textContent = cite.original || '—';
-            document.getElementById('formatted-citation').value = cite.formatted || cite.original || '';
+            // Set default selected option
+            selectedOptionIndex = cite.selected_option || (cite.options?.length > 1 ? 1 : 0);
+            
+            // Render options
+            renderOptions(cite);
         }
         
+        // ========== RENDER OPTIONS ==========
+        function renderOptions(cite) {
+            const container = document.getElementById('options-container');
+            const options = cite.options || [];
+            
+            if (options.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-8 text-gray-400">
+                        <i class="fas fa-search text-3xl mb-2 opacity-30"></i>
+                        <p class="text-sm">No matches found</p>
+                        <p class="text-xs mt-1">The original citation will be kept</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            options.forEach((opt, idx) => {
+                const isSelected = idx === selectedOptionIndex;
+                const isOriginal = opt.is_original;
+                
+                let cardClass = 'option-card';
+                if (isSelected) cardClass += ' selected';
+                if (isOriginal) cardClass += ' original';
+                
+                // Build author string
+                const authors = opt.authors?.length > 0 
+                    ? opt.authors.slice(0, 3).join(', ') + (opt.authors.length > 3 ? ' et al.' : '')
+                    : '';
+                
+                // Build source badge
+                const sourceBadge = opt.source && !isOriginal
+                    ? `<span class="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">${escapeHtml(opt.source)}</span>`
+                    : '';
+                
+                html += `
+                    <div class="${cardClass}" onclick="selectOption(${idx})">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="flex-1 min-w-0">
+                                ${isOriginal ? `
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <i class="fas fa-undo text-gray-400"></i>
+                                        <span class="text-sm font-medium text-gray-600">Keep Original</span>
+                                    </div>
+                                    <p class="text-xs text-gray-400">No changes will be made to this citation</p>
+                                ` : `
+                                    <div class="flex items-center gap-2 mb-1">
+                                        ${sourceBadge}
+                                        ${opt.year ? `<span class="text-xs text-gray-500">${escapeHtml(opt.year)}</span>` : ''}
+                                    </div>
+                                    <p class="text-sm font-medium text-gray-800 mb-1">${escapeHtml(opt.title || 'Untitled')}</p>
+                                    ${authors ? `<p class="text-xs text-gray-500">${escapeHtml(authors)}</p>` : ''}
+                                    ${opt.journal ? `<p class="text-xs text-gray-400 italic mt-1">${escapeHtml(opt.journal)}</p>` : ''}
+                                    ${opt.publisher ? `<p class="text-xs text-gray-400 mt-1">${escapeHtml(opt.publisher)}</p>` : ''}
+                                `}
+                            </div>
+                            <div class="flex-shrink-0">
+                                ${isSelected 
+                                    ? '<i class="fas fa-check-circle text-blue-600 text-lg"></i>' 
+                                    : '<i class="far fa-circle text-gray-300 text-lg"></i>'
+                                }
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        // ========== SELECT OPTION ==========
+        function selectOption(idx) {
+            selectedOptionIndex = idx;
+            
+            // Update visual selection
+            document.querySelectorAll('.option-card').forEach((el, i) => {
+                el.classList.toggle('selected', i === idx);
+                const icon = el.querySelector('.fa-check-circle, .fa-circle');
+                if (icon) {
+                    if (i === idx) {
+                        icon.classList.remove('far', 'fa-circle', 'text-gray-300');
+                        icon.classList.add('fas', 'fa-check-circle', 'text-blue-600');
+                    } else {
+                        icon.classList.remove('fas', 'fa-check-circle', 'text-blue-600');
+                        icon.classList.add('far', 'fa-circle', 'text-gray-300');
+                    }
+                }
+            });
+            
+            // Update citation's selected option
+            if (activeCitationIndex >= 0) {
+                currentCitations[activeCitationIndex].selected_option = idx;
+            }
+        }
+        
+        // ========== KEEP ORIGINAL ==========
+        function keepOriginal() {
+            selectOption(0); // Option 0 is always "Keep Original"
+            acceptAndNext();
+        }
+        
+        // ========== ACCEPT AND NEXT ==========
+        async function acceptAndNext() {
+            if (activeCitationIndex < 0) return;
+            
+            const cite = currentCitations[activeCitationIndex];
+            const selectedOption = cite.options?.[selectedOptionIndex];
+            
+            // Mark as accepted locally
+            cite.accepted = true;
+            cite.selected_option = selectedOptionIndex;
+            
+            // Save to backend
+            try {
+                const response = await fetch('/api/accept-reference', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        citation_id: cite.id || cite.note_id,
+                        selected_option: selectedOptionIndex,
+                        style: currentStyle
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.formatted) {
+                    cite.formatted = data.formatted;
+                }
+                
+            } catch (error) {
+                console.error('Accept error:', error);
+                // Continue anyway - we'll try to recover during finalize
+            }
+            
+            // Update list
+            renderCitationList();
+            updateAcceptedCount();
+            updateProgressBadge();
+            
+            // Move to next unaccepted, or show success
+            const nextUnaccepted = currentCitations.findIndex((c, i) => i > activeCitationIndex && !c.accepted);
+            
+            if (nextUnaccepted !== -1) {
+                selectCitation(nextUnaccepted);
+            } else {
+                // Check if all are accepted
+                const allAccepted = currentCitations.every(c => c.accepted);
+                if (allAccepted) {
+                    showSuccessPanel();
+                } else {
+                    // Find first unaccepted
+                    const firstUnaccepted = currentCitations.findIndex(c => !c.accepted);
+                    if (firstUnaccepted !== -1) {
+                        selectCitation(firstUnaccepted);
+                    } else {
+                        showSuccessPanel();
+                    }
+                }
+            }
+        }
+        
+        // ========== NAVIGATION ==========
         function prevCitation() {
             if (activeCitationIndex > 0) {
                 selectCitation(activeCitationIndex - 1);
@@ -538,55 +783,52 @@
         
         function nextCitation() {
             if (activeCitationIndex < currentCitations.length - 1) {
-                selectCitation(activeCitationIndex + 1);
+                // Auto-accept current before moving
+                acceptAndNext();
             }
         }
         
-        async function acceptCitation() {
-            if (activeCitationIndex < 0) return;
+        // ========== UPDATE COUNTS ==========
+        function updateAcceptedCount() {
+            const accepted = currentCitations.filter(c => c.accepted).length;
+            const el = document.getElementById('accepted-count');
             
-            const newFormatted = document.getElementById('formatted-citation').value;
-            const cite = currentCitations[activeCitationIndex];
-            
-            // Update local state
-            cite.formatted = newFormatted;
-            cite.success = true;
-            
-            // Save to backend
-            try {
-                const response = await fetch('/api/update', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        session_id: currentSessionId,
-                        note_id: activeCitationIndex + 1,
-                        html: newFormatted
-                    })
-                });
-                
-                const data = await response.json();
-                if (!data.success) {
-                    console.warn('Update warning:', data.error);
-                }
-            } catch (error) {
-                console.error('Update error:', error);
+            if (accepted > 0) {
+                el.textContent = `${accepted} accepted`;
+                el.classList.remove('hidden');
+            } else {
+                el.classList.add('hidden');
             }
-            
-            // Re-render list
-            renderCitationList();
-            
-            // Move to next
-            nextCitation();
         }
         
-        function revertCitation() {
-            if (activeCitationIndex < 0) return;
-            
-            const cite = currentCitations[activeCitationIndex];
-            document.getElementById('formatted-citation').value = cite.original || '';
+        function updateProgressBadge() {
+            const accepted = currentCitations.filter(c => c.accepted).length;
+            document.getElementById('progress-text').textContent = `${accepted}/${currentCitations.length} reviewed`;
         }
         
-        // ========== DOCUMENT DOWNLOAD ==========
+        // ========== SUCCESS PANEL ==========
+        function showSuccessPanel() {
+            document.getElementById('panel-editor').classList.add('hidden');
+            document.getElementById('panel-success').classList.remove('hidden');
+            document.getElementById('download-area').classList.remove('hidden');
+            
+            const accepted = currentCitations.filter(c => c.accepted && c.selected_option !== 0).length;
+            document.getElementById('final-total').textContent = currentCitations.length;
+            document.getElementById('final-accepted').textContent = accepted;
+        }
+        
+        // For footnote mode (auto-processed)
+        function showFootnoteSuccess(data) {
+            document.getElementById('panel-empty').classList.add('hidden');
+            document.getElementById('panel-success').classList.remove('hidden');
+            document.getElementById('download-area').classList.remove('hidden');
+            
+            const stats = data.stats || {};
+            document.getElementById('final-total').textContent = stats.citations_found || 0;
+            document.getElementById('final-accepted').textContent = stats.citations_resolved || 0;
+        }
+        
+        // ========== DOWNLOAD ==========
         async function downloadDocument() {
             if (!currentSessionId) {
                 alert('No document to download');
@@ -594,10 +836,30 @@
             }
             
             try {
+                // For author-date mode, finalize first
+                if (outputType === 'author-date') {
+                    const finalizeResponse = await fetch('/api/finalize-author-date', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            session_id: currentSessionId,
+                            references: [] // Backend will use accepted_references from session
+                        })
+                    });
+                    
+                    const finalizeData = await finalizeResponse.json();
+                    
+                    if (!finalizeResponse.ok || !finalizeData.success) {
+                        throw new Error(finalizeData.error || 'Failed to finalize document');
+                    }
+                }
+                
+                // Now download
                 const response = await fetch(`/api/download/${currentSessionId}`);
                 
                 if (!response.ok) {
-                    throw new Error('Download failed');
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || 'Download failed');
                 }
                 
                 const blob = await response.blob();
@@ -616,26 +878,32 @@
             }
         }
         
+        // ========== RESET ==========
         function resetDocument() {
             currentSessionId = null;
             currentCitations = [];
             activeCitationIndex = -1;
+            selectedOptionIndex = 0;
             
             document.getElementById('file-input').value = '';
             document.getElementById('file-info').classList.add('hidden');
             document.getElementById('download-area').classList.add('hidden');
+            document.getElementById('upload-btn').classList.remove('hidden');
+            document.getElementById('upload-loading').classList.add('hidden');
             document.getElementById('output-type-badge').classList.add('hidden');
-            document.getElementById('success-count').classList.add('hidden');
+            document.getElementById('progress-badge').classList.add('hidden');
+            document.getElementById('accepted-count').classList.add('hidden');
             document.getElementById('citation-count').textContent = '0 total';
             
-            document.getElementById('editor-empty').classList.remove('hidden');
-            document.getElementById('editor-panel').classList.add('hidden');
-            document.getElementById('list-empty').classList.remove('hidden');
+            document.getElementById('panel-empty').classList.remove('hidden');
+            document.getElementById('panel-editor').classList.add('hidden');
+            document.getElementById('panel-success').classList.add('hidden');
+            
             document.getElementById('citation-list').innerHTML = `
                 <div id="list-empty" class="text-center py-12 text-gray-400">
                     <i class="fas fa-inbox text-4xl mb-3 opacity-30"></i>
                     <p class="text-sm font-medium">Upload a document to begin</p>
-                    <p class="text-xs mt-1 text-gray-300">Style determines footnotes vs. author-date</p>
+                    <p class="text-xs mt-1 text-gray-300">Citations will appear here for review</p>
                 </div>
             `;
         }
@@ -654,86 +922,17 @@
             document.getElementById('processing-progress').style.width = `${progress}%`;
         }
         
-        // ========== PROCESSING SUMMARY ==========
-        function showProcessingSummary(stats, bibTitle) {
-            const container = document.getElementById('citation-list');
-            const citationsFound = stats.citations_found || 0;
-            const citationsResolved = stats.citations_resolved || 0;
-            const errors = stats.errors || [];
-            
-            const successRate = citationsFound > 0 
-                ? Math.round((citationsResolved / citationsFound) * 100) 
-                : 100;
-            
-            container.innerHTML = `
-                <div class="space-y-4">
-                    <!-- Success Summary -->
-                    <div class="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4 text-center">
-                        <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                            <i class="fas fa-check-circle text-2xl text-green-600"></i>
-                        </div>
-                        <h3 class="font-bold text-green-800 mb-1">Processing Complete!</h3>
-                        <p class="text-sm text-green-600">
-                            ${citationsResolved} of ${citationsFound} citations resolved
-                        </p>
-                        <div class="mt-3 bg-white/50 rounded-lg px-3 py-2">
-                            <div class="flex items-center justify-between text-xs">
-                                <span class="text-gray-500">Success rate</span>
-                                <span class="font-bold text-green-700">${successRate}%</span>
-                            </div>
-                            <div class="w-full bg-gray-200 rounded-full h-1.5 mt-1">
-                                <div class="bg-green-500 h-1.5 rounded-full" style="width: ${successRate}%"></div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Output Info -->
-                    <div class="bg-white border border-gray-200 rounded-xl p-4">
-                        <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Output Format</h4>
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                                <i class="fas ${outputType === 'footnote' ? 'fa-superscript' : 'fa-user-clock'} text-blue-600"></i>
-                            </div>
-                            <div>
-                                <p class="font-medium text-gray-800">
-                                    ${outputType === 'footnote' ? 'Footnotes/Endnotes' : 'Author-Date Citations'}
-                                </p>
-                                <p class="text-xs text-gray-500">
-                                    ${outputType === 'footnote' ? 'Updated in document' : `${bibTitle} section added`}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    ${errors.length > 0 ? `
-                    <!-- Errors -->
-                    <div class="bg-red-50 border border-red-200 rounded-xl p-4">
-                        <h4 class="text-xs font-bold text-red-600 uppercase tracking-wider mb-2">
-                            <i class="fas fa-exclamation-triangle mr-1"></i> ${errors.length} Issue${errors.length > 1 ? 's' : ''}
-                        </h4>
-                        <ul class="text-xs text-red-600 space-y-1">
-                            ${errors.slice(0, 3).map(e => `<li class="truncate">• ${escapeHtml(e)}</li>`).join('')}
-                            ${errors.length > 3 ? `<li class="text-red-400">...and ${errors.length - 3} more</li>` : ''}
-                        </ul>
-                    </div>
-                    ` : ''}
-                    
-                    <!-- Download Prompt -->
-                    <div class="text-center py-3">
-                        <p class="text-xs text-gray-400">
-                            <i class="fas fa-arrow-down mr-1"></i>
-                            Download your processed document above
-                        </p>
-                    </div>
-                </div>
-            `;
-        }
-        
         // ========== UTILITIES ==========
         function escapeHtml(text) {
+            if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+        
+        function truncate(str, len) {
+            if (!str) return '';
+            return str.length > len ? str.substring(0, len) + '...' : str;
         }
     </script>
 </body>

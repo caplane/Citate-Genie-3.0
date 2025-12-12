@@ -1048,8 +1048,8 @@ def process_author_date():
             note_id = idx + 1
             
             try:
-                # Get raw metadata (no formatting yet) - pass document context for better accuracy
-                metadata_list = get_parenthetical_metadata(original_text, limit=4, document_context=document_context)
+                # Get raw metadata (no formatting yet)
+                metadata_list = get_parenthetical_metadata(original_text, limit=4)
                 
                 # Build options with raw metadata
                 options = [{

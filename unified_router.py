@@ -68,19 +68,24 @@ try:
         lookup_fragment,
         lookup_parenthetical_citation,
         lookup_parenthetical_citation_options,
+        lookup_newspaper_url,  # ChatGPT-first for newspapers/magazines
         ACTIVE_CHAIN as AI_PROVIDERS,
     )
     AI_AVAILABLE = len(AI_PROVIDERS) > 0
+    NEWSPAPER_AI_AVAILABLE = True
 except ImportError as e:
     print(f"[UnifiedRouter] AI lookup not available: {e}")
     AI_AVAILABLE = False
     AI_PROVIDERS = []
+    NEWSPAPER_AI_AVAILABLE = False
     
     # Stub functions for when AI is unavailable
     def classify_citation(text):
         return CitationType.UNKNOWN, None
     classify_with_claude = classify_citation
     classify_with_gemini = classify_citation
+    def lookup_newspaper_url(url):
+        return None
 
 
 def classify_with_ai(query: str, context: str = "") -> Tuple[CitationType, Optional[CitationMetadata]]:
@@ -868,6 +873,27 @@ def _is_medical_url(url: str) -> bool:
     return any(domain in url_lower for domain in MEDICAL_DOMAINS)
 
 
+def _is_newspaper_url(url: str) -> bool:
+    """
+    Check if URL is from a newspaper or magazine domain.
+    
+    Uses NEWSPAPER_DOMAINS from config.py which includes major publications
+    like NYT, WSJ, The Atlantic, The New Yorker, etc.
+    """
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url.lower())
+        domain = parsed.netloc.replace('www.', '')
+        
+        # Check against known newspaper/magazine domains
+        for news_domain in NEWSPAPER_DOMAINS:
+            if news_domain in domain:
+                return True
+        return False
+    except Exception:
+        return False
+
+
 def _route_url(url: str) -> Optional[CitationMetadata]:
     """
     Route URL-based queries.
@@ -876,9 +902,11 @@ def _route_url(url: str) -> Optional[CitationMetadata]:
     1. Extract DOI from URL → Crossref lookup
     2. Academic publisher URL → Crossref search
     3. Medical URL → PubMed
-    4. Generic URL fetch → Extract metadata from HTML (Open Graph, JSON-LD, etc.)
-    5. Fallback → Basic URL metadata (just the URL itself)
+    4. Newspaper/Magazine URL → ChatGPT lookup (ChatGPT-first strategy)
+    5. Generic URL fetch → Extract metadata from HTML (Open Graph, JSON-LD, etc.)
+    6. Fallback → Basic URL metadata (just the URL itself)
     
+    Updated 2025-12-13: Added ChatGPT-first strategy for newspaper/magazine URLs
     Updated 2025-12-13: Added GenericURLEngine for proper HTML metadata extraction
     """
     # Check for DOI in URL
@@ -924,6 +952,23 @@ def _route_url(url: str) -> Optional[CitationMetadata]:
                 return result
         except Exception:
             pass
+    
+    # ==========================================================================
+    # NEWSPAPER/MAGAZINE URLs: ChatGPT-first strategy
+    # ChatGPT can access paywalled content and extract metadata reliably
+    # ==========================================================================
+    if _is_newspaper_url(url) and NEWSPAPER_AI_AVAILABLE:
+        try:
+            print(f"[UnifiedRouter] Newspaper URL detected - trying ChatGPT first: {url[:60]}...")
+            result = lookup_newspaper_url(url)
+            if result and result.has_minimum_data():
+                result.url = url
+                print(f"[UnifiedRouter] ✓ ChatGPT extracted newspaper: '{result.title[:50] if result.title else 'N/A'}...'")
+                return result
+            else:
+                print(f"[UnifiedRouter] ChatGPT returned incomplete data, falling back to HTML scraping")
+        except Exception as e:
+            print(f"[UnifiedRouter] ChatGPT newspaper lookup failed: {e}, falling back to HTML scraping")
     
     # Use GenericURLEngine to fetch and extract metadata from HTML
     # This handles newspapers, magazines, blogs, and any other URL

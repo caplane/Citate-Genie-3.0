@@ -170,7 +170,17 @@ def _score_author_position(result: CitationMetadata, query: str) -> float:
         'ashley', 'dorothy', 'kimberly', 'emily', 'donna', 'michelle', 'carol', 'amanda',
         'eric', 'louis', 'peter', 'henry', 'arthur', 'albert', 'frank', 'raymond',
         'anna', 'ruth', 'helen', 'laura', 'marie', 'ann', 'jane', 'alice', 'grace',
-        'ilyon', 'emmanuel'
+        'ilyon', 'emmanuel', 'leo', 'rachel', 'peggy', 'moishe'
+    }
+    
+    # Common non-name words that might appear capitalized at start of query
+    SKIP_WORDS = {
+        'how', 'what', 'when', 'where', 'why', 'who', 'which', 'whose',
+        'the', 'did', 'does', 'was', 'were', 'are', 'has', 'had', 'have',
+        'can', 'could', 'should', 'would', 'will', 'may', 'might', 'must',
+        'this', 'that', 'these', 'those', 'from', 'with', 'about', 'into',
+        'history', 'origins', 'emergence', 'rise', 'fall', 'decline',
+        'introduction', 'review', 'analysis', 'study', 'case', 'cases'
     }
     
     # Extract potential author surname from query
@@ -187,13 +197,14 @@ def _score_author_position(result: CitationMetadata, query: str) -> float:
                 query_author = second_word.lower()
                 print(f"[AuthorScore] Extracted surname '{query_author}' from '{query}' (skipped first name '{first_word}')")
     
-    # Strategy 2: Find first capitalized word that's not a common first name
+    # Strategy 2: Find first capitalized word that's not a common first name or skip word
     if not query_author:
         for word in words:
             clean = re.sub(r'[^\w]', '', word)
             if clean and clean[0].isupper() and len(clean) >= 3:
-                if clean.lower() not in COMMON_FIRST_NAMES:
-                    query_author = clean.lower()
+                clean_lower = clean.lower()
+                if clean_lower not in COMMON_FIRST_NAMES and clean_lower not in SKIP_WORDS:
+                    query_author = clean_lower
                     print(f"[AuthorScore] Extracted surname '{query_author}' from '{query}'")
                     break
     

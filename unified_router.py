@@ -157,15 +157,47 @@ def _score_author_position(result: CitationMetadata, query: str) -> float:
     if not result or not result.authors:
         return 0.1
     
-    # Extract potential author surname from query (first capitalized word)
+    # Common first names to skip when extracting author surname
+    COMMON_FIRST_NAMES = {
+        'james', 'john', 'robert', 'michael', 'william', 'david', 'richard', 'joseph',
+        'thomas', 'charles', 'christopher', 'daniel', 'matthew', 'anthony', 'mark',
+        'donald', 'steven', 'paul', 'andrew', 'joshua', 'kenneth', 'kevin', 'brian',
+        'george', 'edward', 'ronald', 'timothy', 'jason', 'jeffrey', 'ryan', 'jacob',
+        'mary', 'patricia', 'jennifer', 'linda', 'elizabeth', 'barbara', 'susan',
+        'jessica', 'sarah', 'karen', 'nancy', 'lisa', 'betty', 'margaret', 'sandra',
+        'ashley', 'dorothy', 'kimberly', 'emily', 'donna', 'michelle', 'carol', 'amanda',
+        'eric', 'louis', 'peter', 'henry', 'arthur', 'albert', 'frank', 'raymond',
+        'anna', 'ruth', 'helen', 'laura', 'marie', 'ann', 'jane', 'alice', 'grace',
+        'ilyon', 'emmanuel'
+    }
+    
+    # Extract potential author surname from query
     import re
     words = query.split()
-    author_candidates = [w for w in words if w[0].isupper() and len(w) > 2 and not w.isdigit()]
     
-    if not author_candidates:
+    # Strategy 1: "FirstName LastName keywords" pattern
+    query_author = None
+    if len(words) >= 2:
+        first_word = words[0].strip().lower()
+        second_word = words[1].strip()
+        if first_word in COMMON_FIRST_NAMES:
+            if second_word and second_word[0].isupper() and len(second_word) >= 3:
+                query_author = second_word.lower()
+                print(f"[AuthorScore] Extracted surname '{query_author}' from '{query}' (skipped first name '{first_word}')")
+    
+    # Strategy 2: Find first capitalized word that's not a common first name
+    if not query_author:
+        for word in words:
+            clean = re.sub(r'[^\w]', '', word)
+            if clean and clean[0].isupper() and len(clean) >= 3:
+                if clean.lower() not in COMMON_FIRST_NAMES:
+                    query_author = clean.lower()
+                    print(f"[AuthorScore] Extracted surname '{query_author}' from '{query}'")
+                    break
+    
+    if not query_author:
+        print(f"[AuthorScore] No author found in '{query}' → score 0.5")
         return 0.5  # No clear author in query
-    
-    query_author = author_candidates[0].lower()
     
     # Check each author position
     authors_lower = [a.lower() for a in result.authors]
@@ -173,14 +205,17 @@ def _score_author_position(result: CitationMetadata, query: str) -> float:
     for i, author in enumerate(authors_lower):
         if query_author in author:
             if len(result.authors) == 1:
+                print(f"[AuthorScore] '{query_author}' is SOLE author of '{result.title[:30]}...' → score 1.0")
                 return 1.0  # Sole author
             elif i == 0:
+                print(f"[AuthorScore] '{query_author}' is FIRST author → score 0.9")
                 return 0.9  # First author
             elif i <= 2:
                 return 0.7  # 2nd-3rd author
             else:
                 return 0.3  # 4th+ author (likely coincidental)
     
+    print(f"[AuthorScore] '{query_author}' NOT FOUND in {result.authors} → score 0.1")
     return 0.1  # Author not found in result
 
 
@@ -1363,9 +1398,18 @@ def get_multiple_citations(query: str, style: str = "chicago", limit: int = 5) -
             meta.confidence = _score_author_position(meta, query)
             results[i] = (meta, formatted, source)
         
+        # Log scores before sorting
+        print(f"[UnifiedRouter] Scores before sort:")
+        for meta, formatted, source in results:
+            title_short = meta.title[:40] if meta.title else 'NO TITLE'
+            print(f"  {meta.confidence:.1f} | {source} | {title_short}...")
+        
         # Sort by confidence (author position) descending, then by has DOI
         results.sort(key=lambda r: (r[0].confidence, bool(r[0].doi)), reverse=True)
-        print(f"[UnifiedRouter] Sorted {len(results)} results by author-position score")
+        print(f"[UnifiedRouter] Sorted {len(results)} results, returning top {limit}:")
+        for i, (meta, formatted, source) in enumerate(results[:limit]):
+            title_short = meta.title[:40] if meta.title else 'NO TITLE'
+            print(f"  #{i+1}: {meta.confidence:.1f} | {source} | {title_short}...")
     
     return results[:limit]
 

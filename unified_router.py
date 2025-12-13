@@ -1081,23 +1081,24 @@ def get_multiple_citations(query: str, style: str = "chicago", limit: int = 5) -
                 pass
         
         # Add PubMed results (CRITICAL for medical/scientific papers)
-        if len(results) < limit:
-            try:
-                pm_result = _pubmed.search(query)
-                if pm_result and pm_result.has_minimum_data():
-                    is_duplicate = any(
-                        pm_result.title and r[0].title and 
-                        pm_result.title.lower()[:30] == r[0].title.lower()[:30]
-                        for r in results
-                    )
-                    if not is_duplicate:
-                        formatted = formatter.format(pm_result)
-                        results.append((pm_result, formatted, "PubMed"))
-            except Exception:
-                pass
+        # ALWAYS search PubMed - don't skip based on result count!
+        try:
+            pm_result = _pubmed.search(query)
+            if pm_result and pm_result.has_minimum_data():
+                is_duplicate = any(
+                    pm_result.title and r[0].title and 
+                    pm_result.title.lower()[:30] == r[0].title.lower()[:30]
+                    for r in results
+                )
+                if not is_duplicate:
+                    formatted = formatter.format(pm_result)
+                    results.append((pm_result, formatted, "PubMed"))
+        except Exception as e:
+            print(f"[UnifiedRouter] PubMed error: {e}")
         
         # Add Google Scholar results (paid, but excellent for fragments)
-        if len(results) < limit and GOOGLE_SCHOLAR_AVAILABLE:
+        # ALWAYS search Google Scholar - don't skip based on result count!
+        if GOOGLE_SCHOLAR_AVAILABLE:
             try:
                 gs_result = _google_scholar.search(query)
                 if gs_result and gs_result.has_minimum_data():
@@ -1109,8 +1110,8 @@ def get_multiple_citations(query: str, style: str = "chicago", limit: int = 5) -
                     if not is_duplicate:
                         formatted = formatter.format(gs_result)
                         results.append((gs_result, formatted, "Google Scholar"))
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[UnifiedRouter] Google Scholar error: {e}")
         
         # Also search book engines (Google Books, Library of Congress, Open Library)
         # Many queries could be books misclassified as journals

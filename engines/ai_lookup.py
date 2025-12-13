@@ -347,6 +347,114 @@ def lookup_newspaper_url(url: str) -> Optional[CitationMetadata]:
 
 
 # =============================================================================
+# ACADEMIC URL LOOKUP (ChatGPT-first strategy)
+# =============================================================================
+# Handles law reviews, humanities journals, think tank papers, working papers,
+# and other academic sources that lack DOIs or aren't in standard databases.
+
+ACADEMIC_URL_SYSTEM = """You are a citation metadata extractor for academic publications. Given a URL to an academic article, paper, working paper, or report, extract the citation metadata.
+
+You have access to current information. Extract the following fields:
+- title: The article/paper title (required)
+- authors: List of author names in "First Last" format (required if available)
+- journal: The journal, review, or publication name (e.g., "Harvard Law Review", "Brookings Papers")
+- volume: Volume number (if available)
+- issue: Issue number (if available)
+- pages: Page range (e.g., "1234-1289") or starting page (if available)
+- year: Publication year (4 digits)
+- working_paper_number: Working paper or report number (if applicable, e.g., "Working Paper No. 28")
+
+Respond ONLY with valid JSON, no explanation:
+{"title": "...", "authors": ["First Last"], "journal": "...", "volume": "", "issue": "", "pages": "", "year": "2025", "working_paper_number": ""}
+
+If you cannot access or identify the article, respond: {"error": "Unable to access article"}"""
+
+
+def lookup_academic_url(url: str) -> Optional[CitationMetadata]:
+    """
+    Look up academic publication metadata using ChatGPT.
+    
+    ChatGPT can access URLs and extract metadata from academic sources that
+    often lack DOIs and aren't in standard databases like Crossref:
+    - Law reviews and legal journals
+    - Humanities and literary reviews
+    - Think tank and policy institute papers
+    - Working papers and preprints
+    - University repository content
+    - Professional association publications
+    
+    Args:
+        url: The academic publication URL
+        
+    Returns:
+        CitationMetadata with extracted information, or None if lookup fails
+    """
+    if not OPENAI_API_KEY:
+        print("[AI_Lookup] OpenAI API key not configured for academic lookup")
+        return None
+    
+    prompt = f"Extract citation metadata from this academic publication URL:\n{url}"
+    
+    try:
+        # Use OpenAI directly (ChatGPT-first strategy for academic sources)
+        response = _call_openai(prompt, ACADEMIC_URL_SYSTEM, max_tokens=500)
+        
+        if not response:
+            print("[AI_Lookup] No response from ChatGPT for academic URL")
+            return None
+        
+        data = _parse_json_response(response)
+        
+        if not data:
+            print(f"[AI_Lookup] Failed to parse ChatGPT response: {response[:200]}")
+            return None
+        
+        if data.get('error'):
+            print(f"[AI_Lookup] ChatGPT error: {data['error']}")
+            return None
+        
+        # Build CitationMetadata from response
+        from datetime import datetime
+        access_date = datetime.now().strftime('%B %d, %Y').replace(' 0', ' ')
+        
+        # Determine if this is more like a journal article or a report/working paper
+        has_journal_fields = bool(data.get('volume') or data.get('issue') or data.get('pages'))
+        has_working_paper = bool(data.get('working_paper_number'))
+        
+        result = CitationMetadata(
+            citation_type=CitationType.JOURNAL,  # Default to JOURNAL for academic content
+            raw_source=url,
+            source_engine="ChatGPT",
+            title=data.get('title', ''),
+            authors=data.get('authors', []),
+            journal=data.get('journal', ''),
+            volume=data.get('volume', ''),
+            issue=data.get('issue', ''),
+            pages=data.get('pages', ''),
+            year=data.get('year', ''),
+            url=url,
+            access_date=access_date,
+            confidence=0.95,  # High confidence for ChatGPT extractions
+            raw_data=data,
+        )
+        
+        # Store working paper number in raw_data for formatters that need it
+        if has_working_paper:
+            result.raw_data['working_paper_number'] = data.get('working_paper_number', '')
+        
+        print(f"[AI_Lookup] ChatGPT extracted academic: '{result.title[:50]}...' by {result.authors} in {result.journal}")
+        return result
+        
+    except Exception as e:
+        print(f"[AI_Lookup] ChatGPT academic lookup error: {e}")
+        return None
+
+
+# Backward compatibility alias
+lookup_journal_url = lookup_academic_url
+
+
+# =============================================================================
 # CLASSIFICATION (Layer 5)
 # =============================================================================
 

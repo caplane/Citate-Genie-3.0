@@ -12,6 +12,7 @@ from typing import Optional, List
 from engines.base import SearchEngine
 from models import CitationMetadata, CitationType
 from config import SERPAPI_KEY
+from cost_tracker import log_api_call
 
 ENGINE_TIMEOUT = 10  # SerpAPI can be slower
 
@@ -57,6 +58,9 @@ class GoogleScholarEngine(SearchEngine):
         
         print(f"[{self.name}] Got response, status: {response.status_code}")
         
+        # Log SerpAPI cost (flat rate per search)
+        log_api_call('serpapi', query=query, function='google_scholar')
+        
         try:
             data = response.json()
             
@@ -95,6 +99,9 @@ class GoogleScholarEngine(SearchEngine):
         response = self._make_request(self.base_url, params=params)
         if not response:
             return []
+        
+        # Log SerpAPI cost (flat rate per search)
+        log_api_call('serpapi', query=query, function='google_scholar_multi')
         
         try:
             data = response.json()

@@ -41,6 +41,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from models import CitationMetadata, CitationType
 from config import DEFAULT_TIMEOUT
+from cost_tracker import log_api_call
 
 # =============================================================================
 # API KEYS (from config.py - centralized key management)
@@ -143,6 +144,12 @@ def _call_gemini(prompt: str, system: str, max_tokens: int) -> Optional[str]:
     response.raise_for_status()
     data = response.json()
     
+    # Extract usage for cost tracking
+    usage = data.get('usageMetadata', {})
+    input_tokens = usage.get('promptTokenCount', 0)
+    output_tokens = usage.get('candidatesTokenCount', 0)
+    log_api_call('gemini', input_tokens, output_tokens, prompt[:100], 'ai_lookup')
+    
     candidates = data.get('candidates', [])
     if not candidates:
         return None
@@ -178,6 +185,13 @@ def _call_openai(prompt: str, system: str, max_tokens: int) -> Optional[str]:
     
     response.raise_for_status()
     result = response.json()
+    
+    # Extract usage for cost tracking
+    usage = result.get('usage', {})
+    input_tokens = usage.get('prompt_tokens', 0)
+    output_tokens = usage.get('completion_tokens', 0)
+    log_api_call('openai', input_tokens, output_tokens, prompt[:100], 'ai_lookup')
+    
     return result['choices'][0]['message']['content']
 
 
@@ -207,6 +221,13 @@ def _call_claude(prompt: str, system: str, max_tokens: int) -> Optional[str]:
     
     response.raise_for_status()
     result = response.json()
+    
+    # Extract usage for cost tracking
+    usage = result.get('usage', {})
+    input_tokens = usage.get('input_tokens', 0)
+    output_tokens = usage.get('output_tokens', 0)
+    log_api_call('claude', input_tokens, output_tokens, prompt[:100], 'ai_lookup')
+    
     return result['content'][0]['text']
 
 

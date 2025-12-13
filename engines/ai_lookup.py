@@ -43,12 +43,10 @@ from models import CitationMetadata, CitationType
 from config import DEFAULT_TIMEOUT
 
 # =============================================================================
-# API KEYS (centralized)
+# API KEYS (from config.py - centralized key management)
 # =============================================================================
 
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '').lstrip('=')
-ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '').lstrip('=')
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '').lstrip('=')
+from config import OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY
 
 # =============================================================================
 # PROVIDER CHAIN CONFIGURATION
@@ -65,7 +63,7 @@ if not AI_PROVIDER_CHAIN:
     AI_PROVIDER_CHAIN = ['gemini', 'openai', 'claude']
 
 # Model configuration
-GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-1.5-flash')
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash')
 OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-4o')
 CLAUDE_MODEL = os.environ.get('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022')
 

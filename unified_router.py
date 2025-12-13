@@ -37,7 +37,7 @@ from typing import Optional, Tuple, List
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeout
 
 from models import CitationMetadata, CitationType
-from config import NEWSPAPER_DOMAINS, GOV_AGENCY_MAP
+from config import NEWSPAPER_DOMAINS, GOV_AGENCY_MAP, ACADEMIC_AI_DOMAINS
 from detectors import detect_type, DetectionResult, is_url
 from extractors import extract_by_type
 from formatters.base import get_formatter
@@ -69,15 +69,18 @@ try:
         lookup_parenthetical_citation,
         lookup_parenthetical_citation_options,
         lookup_newspaper_url,  # ChatGPT-first for newspapers/magazines
+        lookup_academic_url,   # ChatGPT-first for academic sources without DOIs
         ACTIVE_CHAIN as AI_PROVIDERS,
     )
     AI_AVAILABLE = len(AI_PROVIDERS) > 0
     NEWSPAPER_AI_AVAILABLE = True
+    ACADEMIC_AI_AVAILABLE = True
 except ImportError as e:
     print(f"[UnifiedRouter] AI lookup not available: {e}")
     AI_AVAILABLE = False
     AI_PROVIDERS = []
     NEWSPAPER_AI_AVAILABLE = False
+    ACADEMIC_AI_AVAILABLE = False
     
     # Stub functions for when AI is unavailable
     def classify_citation(text):
@@ -85,6 +88,8 @@ except ImportError as e:
     classify_with_claude = classify_citation
     classify_with_gemini = classify_citation
     def lookup_newspaper_url(url):
+        return None
+    def lookup_academic_url(url):
         return None
 
 
@@ -894,6 +899,35 @@ def _is_newspaper_url(url: str) -> bool:
         return False
 
 
+def _is_academic_ai_url(url: str) -> bool:
+    """
+    Check if URL is from an academic source that needs AI-first strategy.
+    
+    Uses ACADEMIC_AI_DOMAINS from config.py which includes:
+    - Law reviews and legal journals
+    - Humanities and literary reviews  
+    - Think tanks and policy institutes
+    - University repositories
+    - Professional association publications
+    - Preprint and working paper servers
+    
+    These sources often lack DOIs or aren't consistently indexed in
+    Crossref/OpenAlex/Semantic Scholar.
+    """
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url.lower())
+        domain = parsed.netloc.replace('www.', '')
+        
+        # Check against known academic AI domains
+        for academic_domain in ACADEMIC_AI_DOMAINS:
+            if academic_domain in domain:
+                return True
+        return False
+    except Exception:
+        return False
+
+
 def _route_url(url: str) -> Optional[CitationMetadata]:
     """
     Route URL-based queries.
@@ -902,10 +936,12 @@ def _route_url(url: str) -> Optional[CitationMetadata]:
     1. Extract DOI from URL → Crossref lookup
     2. Academic publisher URL → Crossref search
     3. Medical URL → PubMed
-    4. Newspaper/Magazine URL → ChatGPT lookup (ChatGPT-first strategy)
-    5. Generic URL fetch → Extract metadata from HTML (Open Graph, JSON-LD, etc.)
-    6. Fallback → Basic URL metadata (just the URL itself)
+    4. Academic AI URL (law reviews, think tanks, etc.) → ChatGPT lookup
+    5. Newspaper/Magazine URL → ChatGPT lookup
+    6. Generic URL fetch → Extract metadata from HTML (Open Graph, JSON-LD, etc.)
+    7. Fallback → Basic URL metadata (just the URL itself)
     
+    Updated 2025-12-14: Expanded to ACADEMIC_AI_DOMAINS for all non-DOI academic sources
     Updated 2025-12-13: Added ChatGPT-first strategy for newspaper/magazine URLs
     Updated 2025-12-13: Added GenericURLEngine for proper HTML metadata extraction
     """
@@ -952,6 +988,24 @@ def _route_url(url: str) -> Optional[CitationMetadata]:
                 return result
         except Exception:
             pass
+    
+    # ==========================================================================
+    # ACADEMIC AI URLs: ChatGPT-first strategy
+    # Law reviews, think tanks, humanities journals, working papers, etc.
+    # These sources often lack DOIs or aren't in standard databases
+    # ==========================================================================
+    if _is_academic_ai_url(url) and ACADEMIC_AI_AVAILABLE:
+        try:
+            print(f"[UnifiedRouter] Academic AI URL detected - trying ChatGPT first: {url[:60]}...")
+            result = lookup_academic_url(url)
+            if result and result.has_minimum_data():
+                result.url = url
+                print(f"[UnifiedRouter] ✓ ChatGPT extracted academic: '{result.title[:50] if result.title else 'N/A'}...'")
+                return result
+            else:
+                print(f"[UnifiedRouter] ChatGPT returned incomplete data, falling back to HTML scraping")
+        except Exception as e:
+            print(f"[UnifiedRouter] ChatGPT academic lookup failed: {e}, falling back to HTML scraping")
     
     # ==========================================================================
     # NEWSPAPER/MAGAZINE URLs: ChatGPT-first strategy

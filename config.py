@@ -264,6 +264,176 @@ NEWSPAPER_DOMAINS: Dict[str, str] = {
 }
 
 # =============================================================================
+# ACADEMIC AI DOMAINS
+# =============================================================================
+# Academic sources that often lack DOIs or aren't consistently indexed in
+# Crossref/OpenAlex/Semantic Scholar. ChatGPT-first strategy extracts metadata
+# reliably from these sources.
+#
+# Categories:
+# 1. Law Reviews & Legal Journals
+# 2. Humanities & Literary Reviews
+# 3. Think Tanks & Policy Institutes
+# 4. University Repositories & Digital Commons
+# 5. Professional Association Publications
+# 6. Preprint & Working Paper Servers
+# 7. Book Review Publications
+
+ACADEMIC_AI_DOMAINS: Dict[str, str] = {
+    # ==========================================================================
+    # LAW REVIEWS - TOP 14 (T14)
+    # ==========================================================================
+    'harvardlawreview.org': 'Harvard Law Review',
+    'yalelawjournal.org': 'Yale Law Journal',
+    'stanfordlawreview.org': 'Stanford Law Review',
+    'columbialawreview.org': 'Columbia Law Review',
+    'chicagounbound.uchicago.edu': 'University of Chicago Law Review',
+    'lawreview.uchicago.edu': 'University of Chicago Law Review',
+    'pennlawreview.com': 'University of Pennsylvania Law Review',
+    'repository.law.umich.edu': 'Michigan Law Review',
+    'michiganlawreview.org': 'Michigan Law Review',
+    'virginialawreview.org': 'Virginia Law Review',
+    'lawreview.duke.edu': 'Duke Law Journal',
+    'cornelllawreview.org': 'Cornell Law Review',
+    'northwesternlawreview.org': 'Northwestern University Law Review',
+    'berkeleylawreview.org': 'California Law Review',
+    'georgetownlawjournal.org': 'Georgetown Law Journal',
+    'texaslawreview.org': 'Texas Law Review',
+    
+    # ==========================================================================
+    # LAW REVIEWS - OTHER MAJOR
+    # ==========================================================================
+    'lawreview.law.ucdavis.edu': 'UC Davis Law Review',
+    'uclalawreview.org': 'UCLA Law Review',
+    'usclaw.org': 'Southern California Law Review',
+    'nyulawreview.org': 'New York University Law Review',
+    'vanderbiltlawreview.org': 'Vanderbilt Law Review',
+    'minnesotalawreview.org': 'Minnesota Law Review',
+    'wisconsinlawreview.org': 'Wisconsin Law Review',
+    'lawreview.law.pitt.edu': 'University of Pittsburgh Law Review',
+    'cardozolawreview.com': 'Cardozo Law Review',
+    'bostoncollegelawreview.org': 'Boston College Law Review',
+    'bu.edu/bulawreview': 'Boston University Law Review',
+    'fordhamlawreview.org': 'Fordham Law Review',
+    'brooklynworks.brooklaw.edu': 'Brooklyn Law Review',
+    'law.emory.edu/elj': 'Emory Law Journal',
+    'repository.uchastings.edu': 'Hastings Law Journal',
+    'digitalcommons.law.ggu.edu': 'Golden Gate University Law Review',
+    'lawandsocialinquiry.org': 'Law and Social Inquiry',
+    'harvardcrcl.org': 'Harvard Civil Rights-Civil Liberties Law Review',
+    
+    # ==========================================================================
+    # HUMANITIES & LITERARY REVIEWS
+    # ==========================================================================
+    'lrb.co.uk': 'London Review of Books',
+    'nybooks.com': 'The New York Review of Books',
+    'theparisreview.org': 'The Paris Review',
+    'nplusonemag.com': 'n+1',
+    'thereviewofmetaphysics.org': 'The Review of Metaphysics',
+    'lareviewofbooks.org': 'Los Angeles Review of Books',
+    'newcriterion.com': 'The New Criterion',
+    'commonwealmagazine.org': 'Commonweal',
+    'firstthings.com': 'First Things',
+    'hedgehogreview.com': 'The Hedgehog Review',
+    'theamericanscholar.org': 'The American Scholar',
+    'dissent.magazine.org': 'Dissent',
+    'jacobin.com': 'Jacobin',
+    'publicbooks.org': 'Public Books',
+    'aeon.co': 'Aeon',
+    'historytoday.com': 'History Today',
+    'currentaffairs.org': 'Current Affairs',
+    
+    # ==========================================================================
+    # THINK TANKS & POLICY INSTITUTES
+    # ==========================================================================
+    'brookings.edu': 'Brookings Institution',
+    'rand.org': 'RAND Corporation',
+    'cfr.org': 'Council on Foreign Relations',
+    'hoover.org': 'Hoover Institution',
+    'cato.org': 'Cato Institute',
+    'aei.org': 'American Enterprise Institute',
+    'heritage.org': 'Heritage Foundation',
+    'urban.org': 'Urban Institute',
+    'newamerica.org': 'New America',
+    'americanprogress.org': 'Center for American Progress',
+    'piie.com': 'Peterson Institute for International Economics',
+    'carnegieendowment.org': 'Carnegie Endowment for International Peace',
+    'wilsoncenter.org': 'Wilson Center',
+    'chathamhouse.org': 'Chatham House',
+    'iiss.org': 'International Institute for Strategic Studies',
+    'nber.org': 'National Bureau of Economic Research',
+    'cepr.org': 'Centre for Economic Policy Research',
+    'voxeu.org': 'VoxEU',
+    'epi.org': 'Economic Policy Institute',
+    'russellsage.org': 'Russell Sage Foundation',
+    'aspeninstitute.org': 'Aspen Institute',
+    'brennancenter.org': 'Brennan Center for Justice',
+    'vera.org': 'Vera Institute of Justice',
+    'sentencingproject.org': 'The Sentencing Project',
+    'migrationpolicy.org': 'Migration Policy Institute',
+    'kff.org': 'Kaiser Family Foundation',
+    'commonwealthfund.org': 'Commonwealth Fund',
+    
+    # ==========================================================================
+    # UNIVERSITY REPOSITORIES & DIGITAL COMMONS
+    # ==========================================================================
+    'scholarship.law.': 'University Law Scholarship',  # Generic pattern
+    'digitalcommons.': 'Digital Commons Repository',   # Generic pattern
+    'repository.': 'University Repository',            # Generic pattern
+    'dash.harvard.edu': 'Harvard DASH Repository',
+    'scholarship.rice.edu': 'Rice Scholarship Repository',
+    'escholarship.org': 'eScholarship (UC)',
+    'deepblue.lib.umich.edu': 'Deep Blue (Michigan)',
+    'ir.uiowa.edu': 'Iowa Research Online',
+    'scholarship.shu.edu': 'Seton Hall Scholarship',
+    'researchgate.net': 'ResearchGate',
+    'academia.edu': 'Academia.edu',
+    
+    # ==========================================================================
+    # PROFESSIONAL ASSOCIATION PUBLICATIONS
+    # ==========================================================================
+    'americanbar.org': 'American Bar Association',
+    'abajournal.com': 'ABA Journal',
+    'ama-assn.org': 'American Medical Association',
+    'psychologytoday.com': 'Psychology Today',
+    'apa.org': 'American Psychological Association',
+    'asanet.org': 'American Sociological Association',
+    'historians.org': 'American Historical Association',
+    'mla.org': 'Modern Language Association',
+    'aaas.org': 'American Association for the Advancement of Science',
+    'amacad.org': 'American Academy of Arts and Sciences',
+    'acls.org': 'American Council of Learned Societies',
+    'theconversation.com': 'The Conversation',
+    
+    # ==========================================================================
+    # PREPRINT & WORKING PAPER SERVERS
+    # ==========================================================================
+    'ssrn.com': 'Social Science Research Network',
+    'papers.ssrn.com': 'Social Science Research Network',
+    'philpapers.org': 'PhilPapers',
+    'philarchive.org': 'PhilArchive',
+    'repec.org': 'RePEc',
+    'ideas.repec.org': 'IDEAS/RePEc',
+    'econpapers.repec.org': 'EconPapers',
+    'osf.io': 'OSF Preprints',
+    'psyarxiv.com': 'PsyArXiv',
+    'socarxiv.org': 'SocArXiv',
+    'eartharxiv.org': 'EarthArXiv',
+    'edarxiv.org': 'EdArXiv',
+    'preprints.org': 'Preprints.org',
+    'zenodo.org': 'Zenodo',
+    
+    # ==========================================================================
+    # BOOK REVIEW PUBLICATIONS
+    # ==========================================================================
+    'complete-review.com': 'The Complete Review',
+    'bookforum.com': 'Bookforum',
+    'literaryreview.co.uk': 'Literary Review',
+    'timesliterarysupplement.com': 'Times Literary Supplement',
+    'the-tls.co.uk': 'Times Literary Supplement',
+}
+
+# =============================================================================
 # GOVERNMENT AGENCY MAPPING
 # =============================================================================
 

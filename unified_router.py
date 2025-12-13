@@ -126,6 +126,63 @@ _openalex = OpenAlexEngine()
 _semantic = SemanticScholarEngine()
 _pubmed = PubMedEngine()
 
+# Google Scholar (paid via SerpAPI) - Layer 4.5
+try:
+    from engines.google_scholar import GoogleScholarEngine
+    _google_scholar = GoogleScholarEngine()
+    GOOGLE_SCHOLAR_AVAILABLE = True
+    print("[UnifiedRouter] Google Scholar available (SerpAPI)")
+except ImportError:
+    _google_scholar = None
+    GOOGLE_SCHOLAR_AVAILABLE = False
+
+
+# =============================================================================
+# AUTHOR-POSITION SCORING (for ambiguous queries)
+# =============================================================================
+# When query contains author surname + keywords, score results by author position.
+# Most users would cite sole/first authors, not 47th author on a consortium paper.
+
+def _score_author_position(result: CitationMetadata, query: str) -> float:
+    """
+    Score a result based on whether query author appears as sole/first author.
+    
+    Returns:
+        1.0 = sole author
+        0.9 = first author
+        0.7 = 2nd-3rd author
+        0.3 = 4th+ author
+        0.1 = author not found
+    """
+    if not result or not result.authors:
+        return 0.1
+    
+    # Extract potential author surname from query (first capitalized word)
+    import re
+    words = query.split()
+    author_candidates = [w for w in words if w[0].isupper() and len(w) > 2 and not w.isdigit()]
+    
+    if not author_candidates:
+        return 0.5  # No clear author in query
+    
+    query_author = author_candidates[0].lower()
+    
+    # Check each author position
+    authors_lower = [a.lower() for a in result.authors]
+    
+    for i, author in enumerate(authors_lower):
+        if query_author in author:
+            if len(result.authors) == 1:
+                return 1.0  # Sole author
+            elif i == 0:
+                return 0.9  # First author
+            elif i <= 2:
+                return 0.7  # 2nd-3rd author
+            else:
+                return 0.3  # 4th+ author (likely coincidental)
+    
+    return 0.1  # Author not found in result
+
 
 # =============================================================================
 # WRAPPER: CONVERT SUPERLEGAL.PY DICT → CitationMetadata
@@ -648,17 +705,21 @@ def _route_book(query: str) -> Optional[CitationMetadata]:
 # UNIFIED JOURNAL SEARCH (parallel execution)
 # =============================================================================
 
-def _route_journal(query: str) -> Optional[CitationMetadata]:
+def _route_journal(query: str, gist: str = "") -> Optional[CitationMetadata]:
     """
     Route journal/academic queries using parallel API execution.
     
-    Engines tried (in parallel):
-    1. Crossref - best for DOIs, formal citations
-    2. OpenAlex - good coverage, fast
-    3. Semantic Scholar - good for author+title queries
-    4. PubMed - medical/life sciences
+    HIERARCHY:
+    1. Famous papers cache (instant, free)
+    2. DOI lookup (instant, free)
+    3. Free databases with author-position scoring (Crossref, OpenAlex, PubMed, Semantic Scholar)
+    4. Google Scholar via SerpAPI (paid, $0.005/search)
+    5. AI lookup with verification (expensive, last resort)
+    
+    Author-position scoring ensures that queries like "Caplan trains brains" match
+    the Eric Caplan paper (sole author) rather than Louis Caplan (neurologist).
     """
-    # Check famous papers cache first (instant lookup for 10,000 most-cited)
+    # Layer 1-2: Check famous papers cache first (instant lookup for 10,000 most-cited)
     famous = find_famous_paper(query)
     if famous:
         try:
@@ -669,7 +730,7 @@ def _route_journal(query: str) -> Optional[CitationMetadata]:
         except Exception:
             pass
     
-    # Check for DOI in query (instant lookup)
+    # Layer 3: Check for DOI in query (instant lookup)
     doi_match = re.search(r'(10\.\d{4,}/[^\s]+)', query)
     if doi_match:
         doi = doi_match.group(1).rstrip('.,;')
@@ -681,7 +742,7 @@ def _route_journal(query: str) -> Optional[CitationMetadata]:
         except Exception:
             pass
     
-    # Parallel search across academic engines
+    # Layer 4: Parallel search across FREE academic engines
     results = []
     
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -698,15 +759,52 @@ def _route_journal(query: str) -> Optional[CitationMetadata]:
                 result = future.result(timeout=2)
                 if result and result.has_minimum_data():
                     result.source_engine = engine_name
+                    # Score by author position
+                    result.confidence = _score_author_position(result, query)
                     results.append(result)
             except Exception:
                 pass
     
-    # Return best result (prefer one with DOI)
+    # Sort by author-position score (highest first)
     if results:
-        for r in results:
-            if r.doi:
-                return r
+        results.sort(key=lambda r: r.confidence, reverse=True)
+        best = results[0]
+        
+        # If high confidence (author is sole/first), return immediately
+        if best.confidence >= 0.7:
+            print(f"[UnifiedRouter] Found via {best.source_engine} (author-score: {best.confidence})")
+            return best
+        
+        print(f"[UnifiedRouter] Low author-score ({best.confidence}), escalating...")
+    
+    # Layer 4.5: Try Google Scholar (paid, better for fragments)
+    if GOOGLE_SCHOLAR_AVAILABLE:
+        try:
+            gs_result = _google_scholar.search(query)
+            if gs_result and gs_result.has_minimum_data():
+                gs_result.confidence = _score_author_position(gs_result, query)
+                if gs_result.confidence >= 0.7:
+                    print(f"[UnifiedRouter] Found via Google Scholar (author-score: {gs_result.confidence})")
+                    return gs_result
+                # Add to results pool
+                results.append(gs_result)
+        except Exception as e:
+            print(f"[UnifiedRouter] Google Scholar error: {e}")
+    
+    # Layer 6: AI lookup with verification (last resort)
+    if AI_AVAILABLE:
+        try:
+            ai_result = lookup_fragment(query, gist=gist, verify=True)
+            if ai_result:
+                print(f"[UnifiedRouter] Found via AI lookup: {ai_result.title[:50]}...")
+                return ai_result
+        except Exception as e:
+            print(f"[UnifiedRouter] AI lookup error: {e}")
+    
+    # Fallback: Return best available result even if low-confidence
+    if results:
+        results.sort(key=lambda r: (r.confidence, bool(r.doi)), reverse=True)
+        print(f"[UnifiedRouter] Returning best available (score: {results[0].confidence})")
         return results[0]
     
     return None
@@ -849,7 +947,7 @@ def route_citation(query: str, style: str = "chicago", context: str = "") -> Tup
                 **famous
             )
         else:
-            metadata = _route_journal(query)
+            metadata = _route_journal(query, gist=context)
     
     elif detection.citation_type == CitationType.NEWSPAPER:
         metadata = extract_by_type(query, CitationType.NEWSPAPER)
@@ -872,7 +970,7 @@ def route_citation(query: str, style: str = "chicago", context: str = "") -> Tup
                 elif ai_type == CitationType.LEGAL:
                     metadata = _route_legal(query)
                 elif ai_type in [CitationType.JOURNAL, CitationType.MEDICAL]:
-                    metadata = _route_journal(query)
+                    metadata = _route_journal(query, gist=context)
                 elif ai_type == CitationType.NEWSPAPER:
                     metadata = extract_by_type(query, CitationType.NEWSPAPER)
                 elif ai_type == CitationType.GOVERNMENT:
@@ -882,7 +980,7 @@ def route_citation(query: str, style: str = "chicago", context: str = "") -> Tup
         if not metadata:
             metadata = _route_book(query)
         if not metadata:
-            metadata = _route_journal(query)
+            metadata = _route_journal(query, gist=context)
     
     # Format and return
     if metadata:
@@ -979,6 +1077,38 @@ def get_multiple_citations(query: str, style: str = "chicago", limit: int = 5) -
                     if not is_duplicate:
                         formatted = formatter.format(ss_result)
                         results.append((ss_result, formatted, "Semantic Scholar"))
+            except Exception:
+                pass
+        
+        # Add PubMed results (CRITICAL for medical/scientific papers)
+        if len(results) < limit:
+            try:
+                pm_result = _pubmed.search(query)
+                if pm_result and pm_result.has_minimum_data():
+                    is_duplicate = any(
+                        pm_result.title and r[0].title and 
+                        pm_result.title.lower()[:30] == r[0].title.lower()[:30]
+                        for r in results
+                    )
+                    if not is_duplicate:
+                        formatted = formatter.format(pm_result)
+                        results.append((pm_result, formatted, "PubMed"))
+            except Exception:
+                pass
+        
+        # Add Google Scholar results (paid, but excellent for fragments)
+        if len(results) < limit and GOOGLE_SCHOLAR_AVAILABLE:
+            try:
+                gs_result = _google_scholar.search(query)
+                if gs_result and gs_result.has_minimum_data():
+                    is_duplicate = any(
+                        gs_result.title and r[0].title and 
+                        gs_result.title.lower()[:30] == r[0].title.lower()[:30]
+                        for r in results
+                    )
+                    if not is_duplicate:
+                        formatted = formatter.format(gs_result)
+                        results.append((gs_result, formatted, "Google Scholar"))
             except Exception:
                 pass
         
@@ -1196,6 +1326,17 @@ def get_multiple_citations(query: str, style: str = "chicago", limit: int = 5) -
                         results.append((ss_result, formatted, "Semantic Scholar"))
             except Exception:
                 pass
+    
+    # SORT BY AUTHOR-POSITION SCORE before returning
+    # This ensures sole/first author matches rank higher than 47th-author matches
+    if results:
+        for i, (meta, formatted, source) in enumerate(results):
+            meta.confidence = _score_author_position(meta, query)
+            results[i] = (meta, formatted, source)
+        
+        # Sort by confidence (author position) descending, then by has DOI
+        results.sort(key=lambda r: (r[0].confidence, bool(r[0].doi)), reverse=True)
+        print(f"[UnifiedRouter] Sorted {len(results)} results by author-position score")
     
     return results[:limit]
 

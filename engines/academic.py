@@ -6,11 +6,17 @@ Academic database search engines.
 - OpenAlexEngine: Broad academic coverage
 - SemanticScholarEngine: AI-powered with author matching
 - PubMedEngine: Biomedical literature
+
+UPDATED 2025-12-12: All engines now use author-position scoring.
+When multiple results are found, the one where the query author is
+sole/first author ranks highest. This fixes the "Eric Caplan trains brains"
+problem where the correct paper was found but discarded in favor of
+papers by Louis Caplan (different author, same surname).
 """
 
 import re
 import difflib
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 from engines.base import SearchEngine
 from models import CitationMetadata, CitationType
@@ -20,6 +26,94 @@ from config import PUBMED_API_KEY, SEMANTIC_SCHOLAR_API_KEY
 ENGINE_TIMEOUT = 5  # seconds
 
 
+# =============================================================================
+# SHARED AUTHOR-POSITION SCORING
+# =============================================================================
+# This is the key insight: PubMed/Crossref/etc often FIND the correct paper,
+# but it's not first in their ranking. By scoring author POSITION, we can
+# identify where the query author is sole/first author vs. 47th author.
+
+# Common first names to skip when extracting surname from query
+COMMON_FIRST_NAMES = {
+    'james', 'john', 'robert', 'michael', 'william', 'david', 'richard', 'joseph',
+    'thomas', 'charles', 'christopher', 'daniel', 'matthew', 'anthony', 'mark',
+    'donald', 'steven', 'paul', 'andrew', 'joshua', 'kenneth', 'kevin', 'brian',
+    'george', 'edward', 'ronald', 'timothy', 'jason', 'jeffrey', 'ryan', 'jacob',
+    'mary', 'patricia', 'jennifer', 'linda', 'elizabeth', 'barbara', 'susan',
+    'jessica', 'sarah', 'karen', 'nancy', 'lisa', 'betty', 'margaret', 'sandra',
+    'ashley', 'dorothy', 'kimberly', 'emily', 'donna', 'michelle', 'carol', 'amanda',
+    'eric', 'louis', 'peter', 'henry', 'arthur', 'albert', 'frank', 'raymond',
+    'anna', 'ruth', 'helen', 'laura', 'marie', 'ann', 'jane', 'alice', 'grace'
+}
+
+
+def extract_query_author(query: str) -> Optional[str]:
+    """
+    Extract the likely author surname from a query.
+    
+    For "Eric Caplan trains brains" → returns "caplan"
+    For "trains brains" → returns None
+    """
+    words = query.split()
+    
+    # Strategy 1: "FirstName LastName keywords" pattern
+    if len(words) >= 2:
+        first_word = words[0].strip().lower()
+        second_word = words[1].strip()
+        
+        if first_word in COMMON_FIRST_NAMES:
+            if second_word[0].isupper() and len(second_word) >= 3:
+                return second_word.lower()
+    
+    # Strategy 2: Find capitalized word that's not a common first name
+    for word in words:
+        clean = re.sub(r'[^\w]', '', word)
+        if clean and clean[0].isupper() and len(clean) >= 3:
+            if clean.lower() not in COMMON_FIRST_NAMES:
+                return clean.lower()
+    
+    return None
+
+
+def score_author_position(authors: List[str], query: str) -> float:
+    """
+    Score based on where query author appears in author list.
+    
+    Returns:
+        1.0 = sole author (best match!)
+        0.9 = first author
+        0.7 = 2nd-3rd author
+        0.3 = 4th+ author (likely coincidental)
+        0.1 = author not found
+        0.5 = no clear author in query
+    """
+    if not authors:
+        return 0.1
+    
+    query_author = extract_query_author(query)
+    if not query_author:
+        return 0.5  # No clear author in query, can't score
+    
+    # Check each author position
+    for i, author in enumerate(authors):
+        author_lower = author.lower()
+        if query_author in author_lower:
+            if len(authors) == 1:
+                return 1.0  # Sole author — best match!
+            elif i == 0:
+                return 0.9  # First author
+            elif i <= 2:
+                return 0.7  # 2nd-3rd author
+            else:
+                return 0.3  # 4th+ author (likely coincidental)
+    
+    return 0.1  # Author not found
+
+
+# =============================================================================
+# CROSSREF ENGINE
+# =============================================================================
+
 class CrossrefEngine(SearchEngine):
     """
     Search Crossref - the official DOI registry.
@@ -28,15 +122,23 @@ class CrossrefEngine(SearchEngine):
     - Journal articles with DOIs
     - Recent publications
     - Accurate metadata
+    
+    UPDATED: Now fetches multiple results and scores by author-position.
     """
     
     name = "Crossref"
     base_url = "https://api.crossref.org/works"
     
     def search(self, query: str) -> Optional[CitationMetadata]:
+        """
+        Search Crossref with author-position scoring.
+        
+        Fetches up to 10 results and returns the one where query author
+        is sole/first author.
+        """
         params = {
             'query.bibliographic': query,
-            'rows': 1
+            'rows': 10  # Get multiple to find best author match
         }
         
         response = self._make_request(self.base_url, params=params)
@@ -48,15 +150,38 @@ class CrossrefEngine(SearchEngine):
             items = data.get('message', {}).get('items', [])
             if not items:
                 return None
-            return self._normalize(items[0], query)
+            
+            # If only one result, just return it
+            if len(items) == 1:
+                return self._normalize(items[0], query)
+            
+            # Score each by author position
+            candidates = []
+            for item in items:
+                meta = self._normalize(item, query)
+                if meta:
+                    score = score_author_position(meta.authors or [], query)
+                    candidates.append((score, meta))
+            
+            if not candidates:
+                return None
+            
+            # Sort by score (highest first)
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            best_score, best_meta = candidates[0]
+            
+            print(f"[{self.name}] Selected result (author-score: {best_score})")
+            return best_meta
+            
         except Exception as e:
             print(f"[{self.name}] Parse error: {e}")
             return None
     
     def search_multiple(self, query: str, limit: int = 5) -> List[CitationMetadata]:
+        """Return multiple results, sorted by author-position score."""
         params = {
             'query.bibliographic': query,
-            'rows': limit
+            'rows': max(limit, 10)  # Get extra for scoring
         }
         
         response = self._make_request(self.base_url, params=params)
@@ -66,7 +191,20 @@ class CrossrefEngine(SearchEngine):
         try:
             data = response.json()
             items = data.get('message', {}).get('items', [])
-            return [self._normalize(item, query) for item in items[:limit]]
+            
+            # Normalize and score all
+            candidates = []
+            for item in items:
+                meta = self._normalize(item, query)
+                if meta:
+                    score = score_author_position(meta.authors or [], query)
+                    meta.confidence = score
+                    candidates.append((score, meta))
+            
+            # Sort by score
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            
+            return [meta for score, meta in candidates[:limit]]
         except:
             return []
     
@@ -146,6 +284,10 @@ class CrossrefEngine(SearchEngine):
         )
 
 
+# =============================================================================
+# OPENALEX ENGINE
+# =============================================================================
+
 class OpenAlexEngine(SearchEngine):
     """
     Search OpenAlex - broad academic coverage.
@@ -154,15 +296,20 @@ class OpenAlexEngine(SearchEngine):
     - Older publications
     - Open access content
     - Citation networks
+    
+    UPDATED: Now fetches multiple results and scores by author-position.
     """
     
     name = "OpenAlex"
     base_url = "https://api.openalex.org/works"
     
     def search(self, query: str) -> Optional[CitationMetadata]:
+        """
+        Search OpenAlex with author-position scoring.
+        """
         params = {
             'search': query,
-            'per-page': 1
+            'per-page': 10  # Get multiple to find best author match
         }
         
         response = self._make_request(self.base_url, params=params)
@@ -174,15 +321,38 @@ class OpenAlexEngine(SearchEngine):
             results = data.get('results', [])
             if not results:
                 return None
-            return self._normalize(results[0], query)
+            
+            # If only one result, just return it
+            if len(results) == 1:
+                return self._normalize(results[0], query)
+            
+            # Score each by author position
+            candidates = []
+            for item in results:
+                meta = self._normalize(item, query)
+                if meta:
+                    score = score_author_position(meta.authors or [], query)
+                    candidates.append((score, meta))
+            
+            if not candidates:
+                return None
+            
+            # Sort by score (highest first)
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            best_score, best_meta = candidates[0]
+            
+            print(f"[{self.name}] Selected result (author-score: {best_score})")
+            return best_meta
+            
         except Exception as e:
             print(f"[{self.name}] Parse error: {e}")
             return None
     
     def search_multiple(self, query: str, limit: int = 5) -> List[CitationMetadata]:
+        """Return multiple results, sorted by author-position score."""
         params = {
             'search': query,
-            'per-page': limit
+            'per-page': max(limit, 10)
         }
         
         response = self._make_request(self.base_url, params=params)
@@ -192,7 +362,17 @@ class OpenAlexEngine(SearchEngine):
         try:
             data = response.json()
             results = data.get('results', [])
-            return [self._normalize(r, query) for r in results[:limit]]
+            
+            candidates = []
+            for item in results:
+                meta = self._normalize(item, query)
+                if meta:
+                    score = score_author_position(meta.authors or [], query)
+                    meta.confidence = score
+                    candidates.append((score, meta))
+            
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            return [meta for score, meta in candidates[:limit]]
         except:
             return []
     
@@ -240,6 +420,10 @@ class OpenAlexEngine(SearchEngine):
         )
 
 
+# =============================================================================
+# SEMANTIC SCHOLAR ENGINE
+# =============================================================================
+
 class SemanticScholarEngine(SearchEngine):
     """
     Search Semantic Scholar - AI-powered with author matching.
@@ -247,6 +431,8 @@ class SemanticScholarEngine(SearchEngine):
     Features:
     - Author-aware result ranking
     - Good for finding papers by "Author Title" queries
+    
+    UPDATED: Now includes author-POSITION scoring, not just name matching.
     """
     
     name = "Semantic Scholar"
@@ -265,13 +451,13 @@ class SemanticScholarEngine(SearchEngine):
     
     def search(self, query: str) -> Optional[CitationMetadata]:
         """
-        Search with author-aware matching.
-        Gets top 10 results, scores by author/title match, returns best.
+        Search with author-position scoring.
+        Gets top 10 results, scores by author position, returns best.
         """
         headers = self._get_headers()
         params = {
             'query': query,
-            'limit': 10,  # Increased from 5 for better fuzzy matching
+            'limit': 10,
             'fields': 'paperId,title,authors'
         }
         
@@ -288,7 +474,7 @@ class SemanticScholarEngine(SearchEngine):
             if not papers:
                 return None
             
-            # Score each paper for relevance
+            # Score each paper by author position
             best_match = self._find_best_match(papers, query)
             
             # Get full details
@@ -299,13 +485,19 @@ class SemanticScholarEngine(SearchEngine):
             return None
     
     def _find_best_match(self, papers: List[dict], query: str) -> dict:
-        """Score papers and return best match. Enhanced for messy queries."""
-        query_lower = query.lower()
-        best_match = papers[0]
-        best_score = 0
+        """
+        Score papers by author POSITION (not just name presence).
         
-        # Extract significant words from query (3+ chars, not stopwords)
-        stopwords = {'the', 'a', 'an', 'of', 'and', 'in', 'on', 'for', 'to', 'none', 'could', 'would', 'put'}
+        UPDATED: Sole author scores highest, first author next, 4th+ lowest.
+        """
+        query_lower = query.lower()
+        query_author = extract_query_author(query)
+        
+        best_match = papers[0]
+        best_score = -1
+        
+        # Stopwords for title matching
+        stopwords = {'the', 'a', 'an', 'of', 'and', 'in', 'on', 'for', 'to'}
         query_words = [w for w in query_lower.split() if len(w) >= 3 and w not in stopwords]
         
         for paper in papers:
@@ -313,30 +505,32 @@ class SemanticScholarEngine(SearchEngine):
             authors = paper.get('authors', [])
             title = paper.get('title', '').lower()
             
-            # Check if author names appear in query
-            for author in authors:
-                name = author.get('name', '').lower()
-                parts = name.split()
-                if parts:
-                    last_name = parts[-1]
-                    first_name = parts[0] if len(parts) > 1 else ''
-                    
-                    if last_name and len(last_name) > 2 and last_name in query_lower:
-                        score += 15  # Boosted author match weight
-                    if first_name and len(first_name) > 2 and first_name in query_lower:
-                        score += 8
+            # AUTHOR POSITION SCORING (the key fix!)
+            if query_author:
+                author_names = [a.get('name', '').lower() for a in authors]
+                for i, author_name in enumerate(author_names):
+                    if query_author in author_name:
+                        if len(authors) == 1:
+                            score += 50  # Sole author - huge bonus!
+                        elif i == 0:
+                            score += 30  # First author
+                        elif i <= 2:
+                            score += 15  # 2nd-3rd author
+                        else:
+                            score += 5   # 4th+ author
+                        break
             
-            # Check title word overlap (exact)
+            # Title word overlap (secondary)
             title_words = set(title.split()) - stopwords
             exact_overlap = len(set(query_words) & title_words)
             score += exact_overlap * 3
             
-            # Check partial word matches (e.g., "train" in "training", "brain" in "brains")
+            # Partial word matches
             for qword in query_words:
-                if len(qword) >= 4:  # Only for 4+ char words
+                if len(qword) >= 4:
                     for tword in title_words:
                         if qword[:4] in tword or tword[:4] in qword:
-                            score += 2  # Partial match bonus
+                            score += 2
             
             if score > best_score:
                 best_score = score
@@ -396,6 +590,10 @@ class SemanticScholarEngine(SearchEngine):
         )
 
 
+# =============================================================================
+# PUBMED ENGINE
+# =============================================================================
+
 class PubMedEngine(SearchEngine):
     """
     Search PubMed / NCBI - biomedical literature.
@@ -404,6 +602,9 @@ class PubMedEngine(SearchEngine):
     - Medical/clinical articles
     - PMID lookups
     - Life sciences
+    
+    UPDATED 2025-12-12: Fetches multiple results and scores by author-position.
+    PubMed almost always HAS the correct paper — it might just not be first.
     """
     
     name = "PubMed"
@@ -413,22 +614,44 @@ class PubMedEngine(SearchEngine):
         super().__init__(api_key=api_key or PUBMED_API_KEY, **kwargs)
     
     def search(self, query: str) -> Optional[CitationMetadata]:
-        """Search PubMed using ESearch + ESummary."""
-        pmid = self._search_for_pmid(query)
-        if not pmid:
-            return None
-        return self._fetch_details(pmid, query)
-    
-    def get_by_id(self, pmid: str) -> Optional[CitationMetadata]:
-        """Look up by PMID directly."""
-        # Clean PMID
-        pmid = re.sub(r'\D', '', pmid)
-        return self._fetch_details(pmid, f"PMID:{pmid}")
-    
-    def _search_for_pmid(self, query: str) -> Optional[str]:
-        """Search for PMID using ESearch with smart query construction."""
+        """
+        Search PubMed with author-position scoring.
         
-        # Build multiple query strategies
+        Fetches multiple PMIDs and returns the one where query author
+        is sole/first author.
+        """
+        # Get multiple PMIDs
+        pmids = self._search_for_pmids(query, max_results=10)
+        if not pmids:
+            return None
+        
+        # If only one result, just return it
+        if len(pmids) == 1:
+            return self._fetch_details(pmids[0], query)
+        
+        # Fetch details for all and score by author-position
+        candidates = []
+        for pmid in pmids:
+            result = self._fetch_details(pmid, query)
+            if result:
+                score = score_author_position(result.authors or [], query)
+                candidates.append((score, result))
+        
+        if not candidates:
+            return None
+        
+        # Sort by author-position score (highest first)
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        
+        best_score, best_result = candidates[0]
+        print(f"[{self.name}] Selected PMID {best_result.pmid} (author-score: {best_score})")
+        
+        return best_result
+    
+    def _search_for_pmids(self, query: str, max_results: int = 10) -> List[str]:
+        """
+        Search PubMed and return list of PMIDs.
+        """
         search_queries = self._build_pubmed_queries(query)
         
         for search_query in search_queries:
@@ -436,7 +659,7 @@ class PubMedEngine(SearchEngine):
                 'db': 'pubmed',
                 'term': search_query,
                 'retmode': 'json',
-                'retmax': 3  # Get a few results to find best match
+                'retmax': max_results
             }
             if self.api_key:
                 params['api_key'] = self.api_key
@@ -447,65 +670,91 @@ class PubMedEngine(SearchEngine):
                     data = response.json()
                     id_list = data.get('esearchresult', {}).get('idlist', [])
                     if id_list:
-                        return id_list[0]
+                        print(f"[{self.name}] Found {len(id_list)} results for: {search_query[:50]}...")
+                        return id_list
                 except:
                     pass
         
-        return None
+        return []
     
-    def _build_pubmed_queries(self, query: str) -> list:
+    def get_by_id(self, pmid: str) -> Optional[CitationMetadata]:
+        """Look up by PMID directly."""
+        pmid = re.sub(r'\D', '', pmid)
+        return self._fetch_details(pmid, f"PMID:{pmid}")
+    
+    def _build_pubmed_queries(self, query: str) -> List[str]:
         """
         Build multiple PubMed query strategies.
         
-        PubMed works best with field-specific searches:
-        - [au] for author
-        - [ti] for title
-        - [tiab] for title/abstract
+        Handles "FirstName LastName keywords" patterns.
         """
         queries = []
         words = query.split()
         
-        # Strategy 1: Detect author name (likely last word if capitalized)
-        # Pattern: "trains brains caplan" -> author is probably "caplan"
         potential_author = None
+        potential_first_name = None
         title_words = []
         
-        for word in words:
-            # Skip short words, years, common words
-            if len(word) <= 2:
-                continue
-            if word.isdigit() and len(word) == 4:  # Year
-                continue
+        # Detect "FirstName LastName keywords" pattern
+        if len(words) >= 2:
+            first_word = words[0].strip()
+            second_word = words[1].strip()
             
-            # Check if it looks like an author name (capitalized, at end, or has initials)
-            clean_word = re.sub(r'[^\w]', '', word)
-            if clean_word and clean_word[0].isupper() and len(clean_word) >= 3:
-                # Could be author - check if it's a common title word
-                common_title_words = {'the', 'and', 'for', 'from', 'with', 'new', 'study'}
-                if clean_word.lower() not in common_title_words:
-                    potential_author = clean_word
-            
-            title_words.append(word)
+            if first_word.lower() in COMMON_FIRST_NAMES:
+                if second_word[0].isupper() and len(second_word) >= 3:
+                    potential_first_name = first_word
+                    potential_author = second_word
+                    title_words = words[2:]
         
-        # Strategy 1: Author + Title field search
-        if potential_author and len(title_words) > 1:
-            # Remove author from title words
-            title_only = [w for w in title_words if w.lower() != potential_author.lower()]
+        # Fallback: scan for capitalized word as author
+        if not potential_author:
+            for word in words:
+                if len(word) <= 2:
+                    continue
+                if word.isdigit() and len(word) == 4:
+                    continue
+                
+                clean_word = re.sub(r'[^\w]', '', word)
+                if clean_word and clean_word[0].isupper() and len(clean_word) >= 3:
+                    common_title_words = {'the', 'and', 'for', 'from', 'with', 'new', 'study'}
+                    if clean_word.lower() not in common_title_words and clean_word.lower() not in COMMON_FIRST_NAMES:
+                        potential_author = clean_word
+                
+                title_words.append(word)
+        
+        # Build queries
+        if potential_author and title_words:
+            title_only = [w for w in title_words 
+                          if w.lower() != potential_author.lower() 
+                          and w.lower() != (potential_first_name or '').lower()]
+            
             if title_only:
-                author_query = f"{potential_author}[au] AND ({' '.join(title_only)}[ti])"
-                queries.append(author_query)
+                # Strategy 1: Surname[au] + title words
+                queries.append(f"{potential_author}[au] AND ({' '.join(title_only)}[ti])")
+                
+                # Strategy 2: First initial + surname
+                if potential_first_name:
+                    initial = potential_first_name[0].upper()
+                    queries.append(f"{potential_author} {initial}[au] AND ({' '.join(title_only)}[ti])")
         
-        # Strategy 2: All words in title/abstract
-        if title_words:
-            tiab_query = ' AND '.join([f"{w}[tiab]" for w in title_words if len(w) >= 3])
+        # Strategy 3: All significant words in title/abstract
+        significant_words = [w for w in words if len(w) >= 4 and not w.isdigit()]
+        if significant_words:
+            tiab_query = ' AND '.join([f"{w}[tiab]" for w in significant_words[:4]])
             if tiab_query:
                 queries.append(tiab_query)
         
-        # Strategy 3: Simple AND search (PubMed default)
+        # Strategy 4: Simple AND search
         queries.append(query)
         
-        # Strategy 4: Quoted phrase (least likely but try anyway)
-        queries.append(f'"{query}"')
+        # Strategy 5: Just surname + significant title words
+        if potential_author and title_words:
+            title_only = [w for w in title_words 
+                          if w.lower() != potential_author.lower() 
+                          and w.lower() != (potential_first_name or '').lower()
+                          and len(w) >= 4]
+            if title_only:
+                queries.append(f"{potential_author}[au] AND {' AND '.join(title_only[:3])}")
         
         return queries
     
@@ -528,42 +777,55 @@ class PubMedEngine(SearchEngine):
             article = data.get('result', {}).get(pmid, {})
             if not article or 'error' in article:
                 return None
-            return self._normalize(article, raw_source, pmid)
-        except:
+            
+            return self._normalize_summary(article, pmid, raw_source)
+        except Exception as e:
+            print(f"[{self.name}] Parse error: {e}")
             return None
     
-    def _normalize(self, item: dict, raw_source: str, pmid: str) -> CitationMetadata:
-        """Convert PubMed response to CitationMetadata."""
+    def _normalize_summary(self, article: dict, pmid: str, raw_source: str) -> CitationMetadata:
+        """Convert PubMed ESummary response to CitationMetadata."""
         # Extract authors
-        authors = [a.get('name', '') for a in item.get('authors', []) if a.get('name')]
+        authors = []
+        author_list = article.get('authors', [])
+        for author in author_list:
+            name = author.get('name', '')
+            if name:
+                authors.append(name)
         
         # Extract year from pubdate
         year = None
-        pubdate = item.get('pubdate', '')
+        pubdate = article.get('pubdate', '')
         if pubdate:
             year_match = re.match(r'(\d{4})', pubdate)
             if year_match:
                 year = year_match.group(1)
         
-        # Extract DOI from article IDs
+        # Get journal
+        journal = article.get('fulljournalname', '') or article.get('source', '')
+        
+        # Get DOI from articleids
         doi = ''
-        for article_id in item.get('articleids', []):
-            if article_id.get('idtype') == 'doi':
-                doi = article_id.get('value', '')
+        for aid in article.get('articleids', []):
+            if aid.get('idtype') == 'doi':
+                doi = aid.get('value', '')
                 break
         
+        # Build URL
+        url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+        
         return self._create_metadata(
-            citation_type=CitationType.MEDICAL,
+            citation_type=CitationType.JOURNAL,
             raw_source=raw_source,
-            title=item.get('title', ''),
+            title=article.get('title', ''),
             authors=authors,
             year=year,
-            journal=item.get('fulljournalname', item.get('source', '')),
-            volume=item.get('volume', ''),
-            issue=item.get('issue', ''),
-            pages=item.get('pages', ''),
+            journal=journal,
+            volume=article.get('volume', ''),
+            issue=article.get('issue', ''),
+            pages=article.get('pages', ''),
             doi=doi,
+            url=url,
             pmid=pmid,
-            url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
-            raw_data=item
+            raw_data=article
         )

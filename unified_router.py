@@ -1084,15 +1084,29 @@ def get_multiple_citations(query: str, style: str = "chicago", limit: int = 5) -
         # ALWAYS search PubMed - don't skip based on result count!
         try:
             pm_result = _pubmed.search(query)
-            if pm_result and pm_result.has_minimum_data():
-                is_duplicate = any(
-                    pm_result.title and r[0].title and 
-                    pm_result.title.lower()[:30] == r[0].title.lower()[:30]
-                    for r in results
-                )
-                if not is_duplicate:
-                    formatted = formatter.format(pm_result)
-                    results.append((pm_result, formatted, "PubMed"))
+            if pm_result:
+                title_preview = pm_result.title[:50] if pm_result.title else 'NO TITLE'
+                journal_preview = pm_result.journal[:30] if pm_result.journal else 'NO JOURNAL'
+                print(f"[UnifiedRouter] PubMed returned: '{title_preview}...'")
+                print(f"[UnifiedRouter] PubMed fields: authors={pm_result.authors}, year={pm_result.year}, journal={journal_preview}")
+                print(f"[UnifiedRouter] PubMed has_minimum_data={pm_result.has_minimum_data()}")
+                if pm_result.has_minimum_data():
+                    is_duplicate = any(
+                        pm_result.title and r[0].title and 
+                        pm_result.title.lower()[:30] == r[0].title.lower()[:30]
+                        for r in results
+                    )
+                    print(f"[UnifiedRouter] PubMed duplicate check: {is_duplicate}")
+                    if not is_duplicate:
+                        formatted = formatter.format(pm_result)
+                        results.append((pm_result, formatted, "PubMed"))
+                        print(f"[UnifiedRouter] ✓ Added PubMed result")
+                    else:
+                        print(f"[UnifiedRouter] ✗ PubMed skipped (duplicate)")
+                else:
+                    print(f"[UnifiedRouter] ✗ PubMed failed has_minimum_data")
+            else:
+                print(f"[UnifiedRouter] PubMed returned None")
         except Exception as e:
             print(f"[UnifiedRouter] PubMed error: {e}")
         
@@ -1101,15 +1115,29 @@ def get_multiple_citations(query: str, style: str = "chicago", limit: int = 5) -
         if GOOGLE_SCHOLAR_AVAILABLE:
             try:
                 gs_result = _google_scholar.search(query)
-                if gs_result and gs_result.has_minimum_data():
-                    is_duplicate = any(
-                        gs_result.title and r[0].title and 
-                        gs_result.title.lower()[:30] == r[0].title.lower()[:30]
-                        for r in results
-                    )
-                    if not is_duplicate:
-                        formatted = formatter.format(gs_result)
-                        results.append((gs_result, formatted, "Google Scholar"))
+                if gs_result:
+                    title_preview = gs_result.title[:50] if gs_result.title else 'NO TITLE'
+                    journal_preview = gs_result.journal[:30] if gs_result.journal else 'NO JOURNAL'
+                    print(f"[UnifiedRouter] Google Scholar returned: '{title_preview}...'")
+                    print(f"[UnifiedRouter] Google Scholar fields: authors={gs_result.authors}, year={gs_result.year}, journal={journal_preview}")
+                    print(f"[UnifiedRouter] Google Scholar has_minimum_data={gs_result.has_minimum_data()}")
+                    if gs_result.has_minimum_data():
+                        is_duplicate = any(
+                            gs_result.title and r[0].title and 
+                            gs_result.title.lower()[:30] == r[0].title.lower()[:30]
+                            for r in results
+                        )
+                        print(f"[UnifiedRouter] Google Scholar duplicate check: {is_duplicate}")
+                        if not is_duplicate:
+                            formatted = formatter.format(gs_result)
+                            results.append((gs_result, formatted, "Google Scholar"))
+                            print(f"[UnifiedRouter] ✓ Added Google Scholar result")
+                        else:
+                            print(f"[UnifiedRouter] ✗ Google Scholar skipped (duplicate)")
+                    else:
+                        print(f"[UnifiedRouter] ✗ Google Scholar failed has_minimum_data")
+                else:
+                    print(f"[UnifiedRouter] Google Scholar returned None")
             except Exception as e:
                 print(f"[UnifiedRouter] Google Scholar error: {e}")
         

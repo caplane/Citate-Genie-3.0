@@ -926,6 +926,7 @@
         let fnActiveIndex = -1;
         let fnSuccessCount = 0;
         let fnJustSaved = false;  // Bug #2 fix: prevent double-save in fnNavigate
+        let fnSaveInProgress = false;  // Bug #2 fix: prevent concurrent updates (race condition)
         
         // Render citation list for footnote mode (clickable for editing)
         function fnRenderCitationList() {
@@ -974,6 +975,12 @@
         
         // Load a footnote into the editor
         function fnLoadEditor(idx) {
+            // Bug #2 fix: Don't allow loading a new citation while save is in progress
+            if (fnSaveInProgress) {
+                console.log('[fnLoadEditor] Blocked - save in progress');
+                return;
+            }
+            
             fnActiveIndex = idx;
             fnJustSaved = false;  // Bug #2 fix: Reset flag when loading new citation
             const cite = currentCitations[idx];
@@ -1079,6 +1086,13 @@
                 return;
             }
             
+            // Bug #2 fix: Prevent concurrent saves (race condition)
+            if (fnSaveInProgress) {
+                console.log('[fnCommitChange] Blocked - save already in progress');
+                return;
+            }
+            fnSaveInProgress = true;
+            
             const cite = currentCitations[fnActiveIndex];
             const noteId = cite.id || fnActiveIndex + 1;
             const newText = document.getElementById('fn-final-textarea').value;
@@ -1116,6 +1130,9 @@
                     // Bug #2 fix: Mark that we just saved to prevent double-save in fnNavigate
                     if (!silent) {
                         fnJustSaved = true;
+                    } else {
+                        // Silent save completed - allow new saves
+                        fnSaveInProgress = false;
                     }
                     
                     // Update sidebar
@@ -1132,6 +1149,7 @@
                             btn.classList.remove('from-green-600', 'to-emerald-600');
                             btn.classList.add('from-blue-600', 'to-indigo-600');
                             btn.disabled = false;
+                            fnSaveInProgress = false;  // Bug #2 fix: Allow new saves now
                             
                             // Auto-advance to next
                             if (fnActiveIndex < currentCitations.length - 1) {
@@ -1149,11 +1167,15 @@
                     if (!silent) {
                         btn.innerHTML = originalHtml;
                         btn.disabled = false;
+                        fnSaveInProgress = false;  // Bug #2 fix: Allow new saves after failure
                         alert('Failed to save: ' + (data.error || 'Unknown error'));
+                    } else {
+                        fnSaveInProgress = false;  // Bug #2 fix: Clear even on silent failure
                     }
                 }
             } catch (err) {
                 console.error('Save error:', err);
+                fnSaveInProgress = false;  // Bug #2 fix: Clear on exception
                 if (!silent) {
                     btn.innerHTML = originalHtml;
                     btn.disabled = false;
@@ -1284,6 +1306,7 @@
             fnActiveIndex = -1;
             fnSuccessCount = 0;
             fnJustSaved = false;  // Bug #2 fix: Reset flag
+            fnSaveInProgress = false;  // Bug #2 fix: Reset flag
             
             document.getElementById('file-input').value = '';
             document.getElementById('file-info').classList.add('hidden');

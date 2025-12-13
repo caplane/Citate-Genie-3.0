@@ -45,6 +45,7 @@ from formatters.base import get_formatter
 # Import CiteFlex Pro engines
 from engines.academic import CrossrefEngine, OpenAlexEngine, SemanticScholarEngine, PubMedEngine
 from engines.doi import extract_doi_from_url, is_academic_publisher_url
+from engines.generic_url import GenericURLEngine
 
 # Import Cite Fix Pro modules (now in engines/)
 from engines import superlegal
@@ -125,6 +126,7 @@ _crossref = CrossrefEngine()
 _openalex = OpenAlexEngine()
 _semantic = SemanticScholarEngine()
 _pubmed = PubMedEngine()
+_generic_url = GenericURLEngine()  # For fetching metadata from any URL
 
 # Google Scholar (paid via SerpAPI) - Layer 4.5
 try:
@@ -863,9 +865,10 @@ def _route_url(url: str) -> Optional[CitationMetadata]:
     1. Extract DOI from URL → Crossref lookup
     2. Academic publisher URL → Crossref search
     3. Medical URL → PubMed
-    4. Newspaper URL → Newspaper extractor
-    5. Government URL → Government extractor
-    6. Generic URL → Basic metadata extraction
+    4. Generic URL fetch → Extract metadata from HTML (Open Graph, JSON-LD, etc.)
+    5. Fallback → Basic URL metadata (just the URL itself)
+    
+    Updated 2025-12-13: Added GenericURLEngine for proper HTML metadata extraction
     """
     # Check for DOI in URL
     doi = extract_doi_from_url(url)
@@ -911,8 +914,30 @@ def _route_url(url: str) -> Optional[CitationMetadata]:
         except Exception:
             pass
     
-    # Fallback to standard extraction
-    return extract_by_type(url, CitationType.URL)
+    # Use GenericURLEngine to fetch and extract metadata from HTML
+    # This handles newspapers, magazines, blogs, and any other URL
+    try:
+        print(f"[UnifiedRouter] Fetching URL metadata: {url[:60]}...")
+        result = _generic_url.fetch_by_url(url)
+        if result and result.has_minimum_data():
+            result.url = url
+            print(f"[UnifiedRouter] GenericURL extracted: title='{result.title[:50] if result.title else 'N/A'}...'")
+            return result
+        elif result:
+            # Got some data but not "minimum" - still use it with URL fallback
+            result.url = url
+            print(f"[UnifiedRouter] GenericURL partial data: {result}")
+            return result
+    except Exception as e:
+        print(f"[UnifiedRouter] GenericURL error: {e}")
+    
+    # Final fallback - just return the URL as citation
+    print(f"[UnifiedRouter] URL fallback - no metadata extracted for: {url[:60]}...")
+    return CitationMetadata(
+        citation_type=CitationType.URL,
+        url=url,
+        raw_data={'original': url}
+    )
 
 
 # =============================================================================
@@ -1054,8 +1079,9 @@ def get_multiple_citations(query: str, style: str = "chicago", limit: int = 5) -
     # Detect type
     detection = detect_type(query)
     
-    # Check for URL with DOI first
+    # Check for URL - handle with DOI extraction OR generic URL fetch
     if is_url(query):
+        # Try DOI extraction first (most reliable for academic URLs)
         doi = extract_doi_from_url(query)
         if doi:
             try:
@@ -1066,6 +1092,41 @@ def get_multiple_citations(query: str, style: str = "chicago", limit: int = 5) -
                     results.append((result, formatted, "Crossref (DOI)"))
             except Exception:
                 pass
+        
+        # Also try DOI from URL path
+        if not results:
+            doi_match = re.search(r'(10\.\d{4,}/[^\s?#]+)', query)
+            if doi_match:
+                doi = doi_match.group(1).rstrip('.,;')
+                try:
+                    result = _crossref.get_by_id(doi)
+                    if result and result.has_minimum_data():
+                        result.url = query
+                        formatted = formatter.format(result)
+                        results.append((result, formatted, "Crossref (DOI)"))
+                except Exception:
+                    pass
+        
+        # Fetch URL metadata via GenericURLEngine (newspapers, magazines, blogs, etc.)
+        # This actually fetches the page and extracts Open Graph / JSON-LD metadata
+        if not results or len(results) < limit:
+            try:
+                print(f"[UnifiedRouter] Fetching URL metadata for alternatives: {query[:60]}...")
+                url_result = _generic_url.fetch_by_url(query)
+                if url_result and url_result.title:  # Need at least a title
+                    url_result.url = query
+                    formatted = formatter.format(url_result)
+                    source_name = "URL Metadata"
+                    if url_result.citation_type == CitationType.NEWSPAPER:
+                        source_name = url_result.newspaper or "Newspaper"
+                    results.append((url_result, formatted, source_name))
+                    print(f"[UnifiedRouter] ✓ Added URL result: {url_result.title[:50]}...")
+            except Exception as e:
+                print(f"[UnifiedRouter] GenericURL error in get_multiple: {e}")
+        
+        # For URLs, return what we found (don't search academic databases)
+        if results:
+            return results[:limit]
     
     # Check for legal citation
     if superlegal.is_legal_citation(query) or detection.citation_type == CitationType.LEGAL:

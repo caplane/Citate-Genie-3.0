@@ -421,6 +421,11 @@
                         Download Processed Document
                     </button>
                     
+                    <button onclick="backToReview()" class="mt-4 w-full py-3 px-6 bg-white border border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+                        <i class="fas fa-edit"></i>
+                        Back to Review
+                    </button>
+                    
                     <button onclick="resetDocument()" class="mt-4 text-gray-500 hover:text-gray-700 text-sm">
                         <i class="fas fa-redo mr-1"></i> Process Another Document
                     </button>
@@ -920,6 +925,7 @@
         // ========== FOOTNOTE MODE FUNCTIONS ==========
         let fnActiveIndex = -1;
         let fnSuccessCount = 0;
+        let fnJustSaved = false;  // Bug #2 fix: prevent double-save in fnNavigate
         
         // Render citation list for footnote mode (clickable for editing)
         function fnRenderCitationList() {
@@ -969,6 +975,7 @@
         // Load a footnote into the editor
         function fnLoadEditor(idx) {
             fnActiveIndex = idx;
+            fnJustSaved = false;  // Bug #2 fix: Reset flag when loading new citation
             const cite = currentCitations[idx];
             const noteId = cite.id || idx + 1;
             
@@ -1100,8 +1107,16 @@
                 if (data.success) {
                     // Update local state
                     currentCitations[fnActiveIndex].formatted = newText;
+                    // Only increment count if this citation wasn't already saved
+                    if (!currentCitations[fnActiveIndex].success) {
+                        fnSuccessCount++;
+                    }
                     currentCitations[fnActiveIndex].success = true;
-                    fnSuccessCount++;
+                    
+                    // Bug #2 fix: Mark that we just saved to prevent double-save in fnNavigate
+                    if (!silent) {
+                        fnJustSaved = true;
+                    }
                     
                     // Update sidebar
                     fnRenderCitationList();
@@ -1149,10 +1164,15 @@
         
         // Navigate between footnotes (auto-saves current)
         async function fnNavigate(delta) {
-            // Auto-save current before navigating
-            const textarea = document.getElementById('fn-final-textarea');
-            if (fnActiveIndex >= 0 && textarea && textarea.value.trim()) {
-                await fnCommitChange(true);  // silent save
+            // Bug #2 fix: Skip auto-save if we just did an explicit save (prevents race condition)
+            if (fnJustSaved) {
+                fnJustSaved = false;
+            } else {
+                // Auto-save current before navigating (only for manual navigation via arrows)
+                const textarea = document.getElementById('fn-final-textarea');
+                if (fnActiveIndex >= 0 && textarea && textarea.value.trim()) {
+                    await fnCommitChange(true);  // silent save
+                }
             }
             
             const newIdx = fnActiveIndex + delta;
@@ -1195,6 +1215,14 @@
             
             document.getElementById('final-total').textContent = currentCitations.length;
             document.getElementById('final-accepted').textContent = fnSuccessCount;
+        }
+        
+        // Return to review from success panel (Bug #1 fix)
+        function backToReview() {
+            document.getElementById('panel-success').classList.add('hidden');
+            document.getElementById('panel-footnote-editor').classList.remove('hidden');
+            // Load the first citation for review
+            fnLoadEditor(0);
         }
         
         // ========== DOWNLOAD ==========
@@ -1255,6 +1283,7 @@
             selectedOptionIndex = 0;
             fnActiveIndex = -1;
             fnSuccessCount = 0;
+            fnJustSaved = false;  // Bug #2 fix: Reset flag
             
             document.getElementById('file-input').value = '';
             document.getElementById('file-info').classList.add('hidden');

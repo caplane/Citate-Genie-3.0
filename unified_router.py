@@ -4,41 +4,32 @@ citeflex/unified_router.py
 Unified routing logic combining the best of CiteFlex Pro and Cite Fix Pro.
 
 Version History:
-    2025-12-12 V3.5: Fixed import paths for Claude/Gemini routers (routers.claude, routers.gemini)
-    2025-12-06 13:45 V3.4: Added citation parser to extract metadata from already-formatted
-                           citations. Reformats without database search when citation is complete.
-                           Preserves authoritative content while applying consistent style.
+    2025-12-12 V4.0: MAJOR - Consolidated AI into engines/ai_lookup.py
+                     - Removed dependencies on routers/claude.py, routers/gemini.py
+                     - AI classification now uses configurable provider chain
+                     - Provider order set via AI_PROVIDER_CHAIN env var
+    2025-12-12 V3.5: Fixed import paths for Claude/Gemini routers
+    2025-12-06 13:45 V3.4: Added citation parser for already-formatted citations
     2025-12-06 12:25 V3.3: Added resolve_place fallback in _book_dict_to_metadata
-                           to ensure publisher places appear even when APIs omit them
-    2025-12-06 12:15 V3.2: Added Google Books, Open Library, Library of Congress to
-                           get_multiple_citations() UI options using books.search_all_engines()
-    2025-12-06 11:50 V3.1: CRITICAL FIX - Changed search_by_doi to get_by_id,
-                           added famous papers cache to _route_journal,
-                           added fallback DOI regex extraction to _route_url
+    2025-12-06 12:15 V3.2: Added Google Books, Open Library, Library of Congress
+    2025-12-06 11:50 V3.1: CRITICAL FIX - get_by_id, famous papers cache
     2025-12-06 V3.0: Switched to Claude API as primary AI router
-    2025-12-05 13:15 V1.0: Initial unified router combining both systems
-    2025-12-05 13:15 V1.1: Added Westlaw pattern, verified all medical .gov exclusions
-    2025-12-05 20:30 V2.0: Moved to engines/ architecture (superlegal, books)
-    2025-12-05 21:00 V2.1: Fixed get_multiple_citations to return 3-tuples
-    2025-12-05 21:30 V2.2: Added URL/DOI handling to get_multiple_citations
-    2025-12-05 22:30 V2.3: Added famous papers cache (10,000 most-cited papers)
-    2025-12-05 23:00 V2.4: Added Gemini AI fallback for UNKNOWN queries
-    2025-12-05 22:45 V2.4: Fixed UNKNOWN routing to search books first
-    2025-12-06 V3.0: Switched to Claude API as primary AI router
+    2025-12-05 V2.0: Moved to engines/ architecture (superlegal, books)
+    2025-12-05 V1.0: Initial unified router combining both systems
 
 KEY IMPROVEMENTS OVER ORIGINAL router.py:
 1. Legal detection uses superlegal.is_legal_citation() which checks FAMOUS_CASES cache
-   during detection (not just regex patterns that miss bare case names)
 2. Legal extraction uses superlegal.extract_metadata() for cache + CourtListener API
 3. Book search uses books.py's GoogleBooksAPI + OpenLibraryAPI with PUBLISHER_PLACE_MAP
 4. Academic search uses CiteFlex Pro's parallel engine execution
 5. Medical URL override prevents PubMed/NIH URLs from routing to government
-6. Claude AI router for ambiguous queries with multi-option support
+6. AI classification via consolidated engines/ai_lookup.py (configurable provider chain)
 
 ARCHITECTURE:
 - Wrapper classes convert superlegal.py/books.py dicts → CitationMetadata
 - Parallel execution via ThreadPoolExecutor (12s timeout)
-- Routing priority: Legal → URL handling → Parallel search → Fallback
+- Routing priority: Legal → URL handling → Parallel search → AI Fallback
+- AI provider chain: gemini → openai → claude (configurable via env var)
 """
 
 import re
@@ -61,60 +52,58 @@ from engines import books
 from engines.famous_papers import find_famous_paper
 
 # =============================================================================
-# AI ROUTER CONFIGURATION (Claude primary, Gemini fallback)
+# AI LOOKUP (consolidated module - replaces routers/claude.py and routers/gemini.py)
 # =============================================================================
 
 import os
-AI_ROUTER = os.environ.get('AI_ROUTER', 'claude').lower()  # 'claude' or 'gemini'
 
-# Try to import Claude router (primary)
+# Import from consolidated AI module
 try:
-    from routers.claude import classify_with_claude, get_citation_options
-    CLAUDE_AVAILABLE = True
-except ImportError:
-    CLAUDE_AVAILABLE = False
-    print("[UnifiedRouter] Claude router not available")
-
-# Try to import Gemini router (fallback)
-try:
-    from routers.gemini import classify_with_gemini
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
+    from engines.ai_lookup import (
+        classify_citation,
+        classify_with_claude,  # Backward compat alias
+        classify_with_gemini,  # Backward compat alias
+        batch_classify_notes,
+        lookup_fragment,
+        lookup_parenthetical_citation,
+        lookup_parenthetical_citation_options,
+        ACTIVE_CHAIN as AI_PROVIDERS,
+    )
+    AI_AVAILABLE = len(AI_PROVIDERS) > 0
+except ImportError as e:
+    print(f"[UnifiedRouter] AI lookup not available: {e}")
+    AI_AVAILABLE = False
+    AI_PROVIDERS = []
+    
+    # Stub functions for when AI is unavailable
+    def classify_citation(text):
+        return CitationType.UNKNOWN, None
+    classify_with_claude = classify_citation
+    classify_with_gemini = classify_citation
 
 
 def classify_with_ai(query: str, context: str = "") -> Tuple[CitationType, Optional[CitationMetadata]]:
     """
-    Use configured AI router (Claude preferred, Gemini fallback).
-    Returns (CitationType, optional metadata).
+    Classify citation using AI (provider chain configured via AI_PROVIDER_CHAIN env var).
     
     Args:
         query: The citation text to classify
         context: Optional document context/gist to improve classification
+        
+    Returns:
+        Tuple of (CitationType, optional CitationMetadata)
     """
-    # Append context hint to query if provided
     enhanced_query = query
     if context:
         enhanced_query = f"{query} [Context: {context}]"
     
-    if AI_ROUTER == 'claude' and CLAUDE_AVAILABLE:
-        return classify_with_claude(enhanced_query)
-    elif AI_ROUTER == 'gemini' and GEMINI_AVAILABLE:
-        return classify_with_gemini(enhanced_query)
-    elif CLAUDE_AVAILABLE:
-        return classify_with_claude(enhanced_query)
-    elif GEMINI_AVAILABLE:
-        return classify_with_gemini(enhanced_query)
-    else:
-        return CitationType.UNKNOWN, None
+    return classify_citation(enhanced_query)
 
 
-AI_AVAILABLE = CLAUDE_AVAILABLE or GEMINI_AVAILABLE
-if not AI_AVAILABLE:
-    print("[UnifiedRouter] No AI router available - UNKNOWN queries will use default routing")
+if AI_AVAILABLE:
+    print(f"[UnifiedRouter] AI classification available via: {' → '.join(AI_PROVIDERS)}")
 else:
-    active_router = "CLAUDE" if (AI_ROUTER == 'claude' and CLAUDE_AVAILABLE) or (not GEMINI_AVAILABLE and CLAUDE_AVAILABLE) else "GEMINI"
-    print(f"[UnifiedRouter] Using {active_router} for AI classification")
+    print("[UnifiedRouter] No AI providers configured - UNKNOWN queries will use default routing")
 
 
 # =============================================================================
@@ -1217,24 +1206,20 @@ def get_multiple_citations(query: str, style: str = "chicago", limit: int = 5) -
 
 def get_citation_options_formatted(query: str, style: str = "chicago", limit: int = 5) -> List[dict]:
     """
-    Get multiple citation options using Claude AI + multiple APIs.
+    Get multiple citation options from multiple APIs.
     
     This is the preferred method for ambiguous queries like "Caplan mind games".
     Returns list of dicts with {citation, source, title, authors, year, ...}.
     
-    Uses claude_router.get_citation_options() which searches:
+    Searches (in parallel):
     - Google Books
     - Crossref  
     - PubMed
-    - Famous Cases Cache
+    - OpenAlex
+    - Semantic Scholar
+    - Famous Papers/Cases Cache
     """
-    if CLAUDE_AVAILABLE:
-        try:
-            return get_citation_options(query, max_options=limit)
-        except Exception as e:
-            print(f"[UnifiedRouter] Claude options error: {e}")
-    
-    # Fallback to standard multiple citations
+    # Use the existing multi-engine search
     results = get_multiple_citations(query, style, limit)
     return [
         {

@@ -1627,6 +1627,54 @@ def select_citation():
         }), 500
 
 
+# =============================================================================
+# ADMIN: COST REPORTING
+# =============================================================================
+
+@app.route('/admin/email-costs')
+def admin_email_costs():
+    """
+    Send cost report to admin email.
+    
+    Requires secret key: /admin/email-costs?key=YOUR_ADMIN_SECRET
+    
+    Environment variables required:
+        - ADMIN_SECRET: Secret key for authentication
+        - ADMIN_EMAIL: Where to send the report
+        - RESEND_API_KEY: Resend.com API key
+    """
+    from email_service import ADMIN_SECRET, send_cost_report
+    
+    # Check for secret key
+    provided_key = request.args.get('key', '')
+    
+    if not ADMIN_SECRET:
+        return jsonify({
+            'success': False,
+            'error': 'ADMIN_SECRET not configured on server'
+        }), 500
+    
+    if not provided_key or provided_key != ADMIN_SECRET:
+        return jsonify({
+            'success': False,
+            'error': 'Invalid or missing key'
+        }), 403
+    
+    # Send the report
+    success = send_cost_report()
+    
+    if success:
+        return jsonify({
+            'success': True,
+            'message': 'Cost report sent to admin email'
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'error': 'Failed to send email. Check server logs and verify RESEND_API_KEY and ADMIN_EMAIL are configured.'
+        }), 500
+
+
 @app.route('/health')
 def health():
     """Health check endpoint."""

@@ -255,6 +255,98 @@ def _parse_json_response(text: str) -> Optional[dict]:
 
 
 # =============================================================================
+# NEWSPAPER/MAGAZINE URL LOOKUP (ChatGPT-first strategy)
+# =============================================================================
+
+NEWSPAPER_URL_SYSTEM = """You are a citation metadata extractor. Given a newspaper or magazine article URL, extract the citation metadata.
+
+You have access to current information. Extract the following fields:
+- title: The article headline (required)
+- authors: List of author names in "First Last" format (may be empty for unsigned editorials)
+- publication: The newspaper or magazine name (e.g., "The Wall Street Journal", "The New York Times")
+- date: Publication date in "Month Day, Year" format (e.g., "December 12, 2025")
+- section: Section name if identifiable (e.g., "Opinion", "Business", "Arts")
+
+Respond ONLY with valid JSON, no explanation:
+{"title": "...", "authors": ["First Last"], "publication": "...", "date": "Month Day, Year", "section": "..."}
+
+If you cannot access or identify the article, respond: {"error": "Unable to access article"}"""
+
+
+def lookup_newspaper_url(url: str) -> Optional[CitationMetadata]:
+    """
+    Look up newspaper/magazine article metadata using ChatGPT.
+    
+    ChatGPT can access URLs and extract metadata even from paywalled sites
+    where HTML scraping fails.
+    
+    Args:
+        url: The newspaper/magazine article URL
+        
+    Returns:
+        CitationMetadata with extracted information, or None if lookup fails
+    """
+    if not OPENAI_API_KEY:
+        print("[AI_Lookup] OpenAI API key not configured for newspaper lookup")
+        return None
+    
+    prompt = f"Extract citation metadata from this article URL:\n{url}"
+    
+    try:
+        # Use OpenAI directly (ChatGPT-first strategy for newspapers)
+        response = _call_openai(prompt, NEWSPAPER_URL_SYSTEM, max_tokens=500)
+        
+        if not response:
+            print("[AI_Lookup] No response from ChatGPT for newspaper URL")
+            return None
+        
+        data = _parse_json_response(response)
+        
+        if not data:
+            print(f"[AI_Lookup] Failed to parse ChatGPT response: {response[:200]}")
+            return None
+        
+        if data.get('error'):
+            print(f"[AI_Lookup] ChatGPT error: {data['error']}")
+            return None
+        
+        # Build CitationMetadata from response
+        from datetime import datetime
+        access_date = datetime.now().strftime('%B %d, %Y').replace(' 0', ' ')
+        
+        # Extract year from date if present
+        year = None
+        date_str = data.get('date', '')
+        if date_str:
+            import re
+            year_match = re.search(r'\b(19|20)\d{2}\b', date_str)
+            if year_match:
+                year = year_match.group(0)
+        
+        result = CitationMetadata(
+            citation_type=CitationType.NEWSPAPER,
+            raw_source=url,
+            source_engine="ChatGPT",
+            title=data.get('title', ''),
+            authors=data.get('authors', []),
+            newspaper=data.get('publication', ''),
+            date=date_str,
+            year=year,
+            url=url,
+            access_date=access_date,
+            confidence=0.95,  # High confidence for ChatGPT extractions
+            raw_data=data,
+        )
+        
+        print(f"[AI_Lookup] ChatGPT extracted: '{result.title[:50]}...' by {result.authors} from {result.newspaper}")
+        return result
+        
+    except Exception as e:
+        print(f"[AI_Lookup] ChatGPT newspaper lookup error: {e}")
+        return None
+
+
+# =============================================================================
 # CLASSIFICATION (Layer 5)
 # =============================================================================
 

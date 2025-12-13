@@ -257,7 +257,19 @@ class GenericURLEngine(SearchEngine):
                 if key == 'date':
                     value = self._normalize_date(value)
                 if key == 'author':
-                    data['authors'] = [value]
+                    # Reject URLs - they're not author names (e.g., https://thenation.com/authors)
+                    if value and not value.startswith('http'):
+                        data['authors'] = [value]
+                elif key == 'title':
+                    # Clean site name suffix from title (e.g., " | The Nation")
+                    separators = [' | ', ' - ', ' – ', ' — ', ' :: ']
+                    for sep in separators:
+                        if sep in value:
+                            parts = value.split(sep)
+                            # Usually the article title is the first/longest part
+                            value = max(parts, key=len).strip()
+                            break
+                    data[key] = value
                 else:
                     data[key] = value
         
@@ -278,6 +290,9 @@ class GenericURLEngine(SearchEngine):
             tag = soup.find('meta', attrs={'name': tw_name})
             if tag and tag.get('content'):
                 value = tag['content'].strip()
+                # Reject URLs - they're not author names
+                if key == 'author' and value.startswith('http'):
+                    continue
                 # Twitter handles start with @
                 if key == 'author' and value.startswith('@'):
                     value = value[1:]  # Remove @ prefix

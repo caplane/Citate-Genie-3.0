@@ -1176,13 +1176,23 @@ def process_author_date():
                         'is_original': False
                     })
                 
+                # Pre-format the recommended option (first AI result) for immediate display
+                formatted_recommendation = None
+                if len(options) > 1 and len(metadata_list) > 0:
+                    try:
+                        from formatters.base import get_formatter
+                        formatter = get_formatter(style)
+                        formatted_recommendation = formatter.format(metadata_list[0])
+                    except Exception as fmt_err:
+                        print(f"[API] Error pre-formatting recommendation: {fmt_err}")
+                
                 return {
                     'id': idx + 1,
                     'note_id': note_id,
                     'original': original_text,
                     'options': options,
                     'selected_option': 1 if len(options) > 1 else 0,  # Default to first AI result
-                    'formatted': None,  # Will be set when user accepts
+                    'formatted': formatted_recommendation,  # Pre-formatted for immediate display
                     'accepted': False
                 }
                 

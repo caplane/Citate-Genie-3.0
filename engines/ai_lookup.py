@@ -260,9 +260,11 @@ def _parse_json_response(text: str) -> Optional[dict]:
 
 NEWSPAPER_URL_SYSTEM = """You are a citation metadata extractor. Given a newspaper or magazine article URL, extract the citation metadata.
 
-You have access to current information. Extract the following fields:
+CRITICAL: You must extract the author's name. Look for bylines like "By John Smith" or author credits. Opinion pieces and columns always have authors (e.g., Peggy Noonan for WSJ opinion columns).
+
+Extract the following fields:
 - title: The article headline (required)
-- authors: List of author names in "First Last" format (may be empty for unsigned editorials)
+- authors: List of author names in "First Last" format. IMPORTANT: Most articles have authors - look carefully for bylines. Only leave empty for unsigned editorials.
 - publication: The newspaper or magazine name (e.g., "The Wall Street Journal", "The New York Times")
 - date: Publication date in "Month Day, Year" format (e.g., "December 12, 2025")
 - section: Section name if identifiable (e.g., "Opinion", "Business", "Arts")
@@ -354,9 +356,11 @@ def lookup_newspaper_url(url: str) -> Optional[CitationMetadata]:
 
 ACADEMIC_URL_SYSTEM = """You are a citation metadata extractor for academic publications. Given a URL to an academic article, paper, working paper, or report, extract the citation metadata.
 
-You have access to current information. Extract the following fields:
+CRITICAL: You must extract the author's name(s). Academic articles almost always have authors. Look for bylines, author credits, or "by" attributions. Law review articles always have authors.
+
+Extract the following fields:
 - title: The article/paper title (required)
-- authors: List of author names in "First Last" format (required if available)
+- authors: List of author names in "First Last" format. IMPORTANT: Academic articles have authors - look carefully and extract them. Do not leave empty unless truly anonymous.
 - journal: The journal, review, or publication name (e.g., "Harvard Law Review", "Brookings Papers")
 - volume: Volume number (if available)
 - issue: Issue number (if available)

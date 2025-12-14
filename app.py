@@ -53,6 +53,7 @@ from unified_router import get_citation, get_multiple_citations, get_parenthetic
 from formatters.base import get_formatter
 from document_processor import process_document
 from processors.topic_extractor import get_document_context
+from processors.document_metadata import export_cache_to_csv
 
 # =============================================================================
 # APP CONFIGURATION
@@ -705,8 +706,8 @@ def process_doc():
         # Read file bytes
         file_bytes = file.read()
         
-        # Process document
-        processed_bytes, results = process_document(
+        # Process document (returns bytes, results, and metadata cache)
+        processed_bytes, results, metadata_cache = process_document(
             file_bytes,
             style=style,
             add_links=add_links
@@ -719,6 +720,7 @@ def process_doc():
         sessions.set(session_id, 'processed_doc', processed_bytes)
         sessions.set(session_id, 'original_bytes', file_bytes)  # Store original for re-processing
         sessions.set(session_id, 'style', style)
+        sessions.set(session_id, 'metadata_cache', metadata_cache)  # Store cache for CSV export
         sessions.set(session_id, 'results', [
             {
                 'id': idx + 1,
@@ -770,6 +772,7 @@ def process_doc():
                 'ibid': sum(1 for r in results if r.citation_form == 'ibid'),
                 'short': sum(1 for r in results if r.citation_form == 'short'),
                 'full': sum(1 for r in results if r.citation_form == 'full'),
+                'cached_citations': metadata_cache.size(),  # Total cached (old + new)
             },
             'cost': doc_cost_summary,  # Include cost info in response
         })
@@ -817,6 +820,83 @@ def download(session_id: str):
         
     except Exception as e:
         print(f"[API] Error in /api/download: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/export-metadata/<session_id>')
+def export_metadata(session_id: str):
+    """
+    Export citation metadata as CSV file.
+    
+    This exports the embedded metadata cache from the processed document,
+    allowing users to download a spreadsheet of all citation data.
+    
+    Added: 2025-12-14 (V4.1 - Embedded Metadata Cache)
+    """
+    print(f"[API] export-metadata called for session {session_id[:8]}...")
+    
+    try:
+        session_data = sessions.get(session_id)
+        print(f"[API] Session data exists: {session_data is not None}")
+        
+        if not session_data:
+            print(f"[API] Session not found: {session_id[:8]}")
+            return jsonify({
+                'success': False,
+                'error': 'Session not found or expired'
+            }), 404
+        
+        print(f"[API] Session keys: {list(session_data.keys())}")
+        metadata_cache = session_data.get('metadata_cache')
+        print(f"[API] metadata_cache exists: {metadata_cache is not None}")
+        print(f"[API] metadata_cache type: {type(metadata_cache)}")
+        
+        if not metadata_cache:
+            print(f"[API] No metadata_cache in session")
+            return jsonify({
+                'success': False,
+                'error': 'No metadata cache found for this session'
+            }), 404
+        
+        cache_size = metadata_cache.size()
+        print(f"[API] metadata_cache size: {cache_size}")
+        
+        if cache_size == 0:
+            print(f"[API] metadata_cache is empty")
+            return jsonify({
+                'success': False,
+                'error': 'Metadata cache is empty'
+            }), 404
+        
+        # Generate CSV
+        print(f"[API] Generating CSV...")
+        csv_content = export_cache_to_csv(metadata_cache)
+        print(f"[API] CSV content length: {len(csv_content)} chars")
+        
+        # Get filename for export
+        original_filename = session_data.get('filename', 'document')
+        # Remove .docx extension if present
+        base_name = original_filename.rsplit('.', 1)[0] if '.' in original_filename else original_filename
+        
+        from io import BytesIO
+        buffer = BytesIO(csv_content.encode('utf-8'))
+        buffer.seek(0)
+        
+        print(f"[API] Sending CSV file: {base_name}_citations.csv")
+        return send_file(
+            buffer,
+            mimetype='text/csv',
+            as_attachment=True,
+            download_name=f"{base_name}_citations.csv"
+        )
+        
+    except Exception as e:
+        import traceback
+        print(f"[API] Error in /api/export-metadata: {e}")
+        print(f"[API] Traceback: {traceback.format_exc()}")
         return jsonify({
             'success': False,
             'error': str(e)

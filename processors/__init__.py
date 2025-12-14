@@ -15,18 +15,33 @@ Modules:
     footnote_builder.py     - Build footnote-style output
     author_date_builder.py  - Build author-date + References output
     orchestrator.py         - Thin wiring layer coordinating all modules
+    
+    # Embedded metadata cache (2025-12-14):
+    document_metadata.py    - Read/write citation cache embedded in documents
 """
 
-from processors.word_document import WordDocumentProcessor, process_document
+from processors.word_document import WordDocumentProcessor
 from processors.author_date import process_author_date_document
 from processors.orchestrator import process_document_unified, ProcessingResult
+from processors.document_metadata import (
+    CitationMetadataCache,
+    load_cache_from_docx,
+    save_cache_to_docx,
+    export_cache_to_csv,
+    hash_citation_text,
+)
 
 __all__ = [
     # Legacy
     'WordDocumentProcessor',
-    'process_document',
     'process_author_date_document',
     # New unified processor
     'process_document_unified',
     'ProcessingResult',
+    # Embedded metadata cache
+    'CitationMetadataCache',
+    'load_cache_from_docx',
+    'save_cache_to_docx',
+    'export_cache_to_csv',
+    'hash_citation_text',
 ]

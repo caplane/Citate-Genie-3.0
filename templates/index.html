@@ -188,9 +188,12 @@
                 </div>
                 
                 <!-- Download Button (shown after all reviewed) -->
-                <div id="download-area" class="hidden mt-3">
+                <div id="download-area" class="hidden mt-3 space-y-2">
                     <button onclick="downloadDocument()" class="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-medium py-2.5 px-4 rounded-lg transition-all text-sm shadow-sm flex items-center justify-center gap-2">
                         <i class="fas fa-file-download"></i> Download Processed Document
+                    </button>
+                    <button onclick="exportMetadataCSV()" class="w-full bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white font-medium py-2 px-4 rounded-lg transition-all text-xs shadow-sm flex items-center justify-center gap-2">
+                        <i class="fas fa-table"></i> Export Metadata (CSV)
                     </button>
                 </div>
             </div>
@@ -1294,6 +1297,37 @@
             } catch (error) {
                 console.error('Download error:', error);
                 alert('Error downloading document: ' + error.message);
+            }
+        }
+        
+        // ========== EXPORT METADATA CSV ==========
+        async function exportMetadataCSV() {
+            if (!currentSessionId) {
+                alert('No document to export metadata from');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/export-metadata/${currentSessionId}`);
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || 'Export failed');
+                }
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `citations_metadata.csv`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+                
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('Error exporting metadata: ' + error.message);
             }
         }
         

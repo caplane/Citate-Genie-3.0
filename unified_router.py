@@ -1217,11 +1217,44 @@ def get_multiple_citations(query: str, style: str = "chicago", limit: int = 5) -
                 except Exception:
                     pass
         
-        # Fetch URL metadata via GenericURLEngine (newspapers, magazines, blogs, etc.)
-        # This actually fetches the page and extracts Open Graph / JSON-LD metadata
+        # =======================================================================
+        # ChatGPT-first for academic AI URLs (law reviews, think tanks, etc.)
+        # =======================================================================
+        if _is_academic_ai_url(query) and ACADEMIC_AI_AVAILABLE:
+            try:
+                print(f"[UnifiedRouter] Academic AI URL detected - trying ChatGPT first: {query[:60]}...")
+                url_result = lookup_academic_url(query)
+                if url_result and url_result.has_minimum_data():
+                    url_result.url = query
+                    formatted = formatter.format(url_result)
+                    source_name = url_result.journal or "Academic"
+                    results.append((url_result, formatted, f"ChatGPT ({source_name})"))
+                    print(f"[UnifiedRouter] ✓ ChatGPT extracted academic: {url_result.title[:50]}...")
+            except Exception as e:
+                print(f"[UnifiedRouter] ChatGPT academic lookup failed: {e}")
+        
+        # =======================================================================
+        # ChatGPT-first for newspaper/magazine URLs
+        # =======================================================================
+        if (not results or len(results) < limit) and _is_newspaper_url(query) and NEWSPAPER_AI_AVAILABLE:
+            try:
+                print(f"[UnifiedRouter] Newspaper URL detected - trying ChatGPT first: {query[:60]}...")
+                url_result = lookup_newspaper_url(query)
+                if url_result and url_result.has_minimum_data():
+                    url_result.url = query
+                    formatted = formatter.format(url_result)
+                    source_name = url_result.newspaper or "Newspaper"
+                    results.append((url_result, formatted, f"ChatGPT ({source_name})"))
+                    print(f"[UnifiedRouter] ✓ ChatGPT extracted newspaper: {url_result.title[:50]}...")
+            except Exception as e:
+                print(f"[UnifiedRouter] ChatGPT newspaper lookup failed: {e}")
+        
+        # =======================================================================
+        # Fallback: Fetch URL metadata via GenericURLEngine (HTML scraping)
+        # =======================================================================
         if not results or len(results) < limit:
             try:
-                print(f"[UnifiedRouter] Fetching URL metadata for alternatives: {query[:60]}...")
+                print(f"[UnifiedRouter] Fetching URL metadata via HTML scraping: {query[:60]}...")
                 url_result = _generic_url.fetch_by_url(query)
                 if url_result and url_result.title:  # Need at least a title
                     url_result.url = query

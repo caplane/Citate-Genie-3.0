@@ -3,425 +3,1581 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CitateGenie - Citation Workbench</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'system-ui', 'sans-serif'],
-                        serif: ['Merriweather', 'Georgia', 'serif'],
-                    },
-                    colors: {
-                        brand: {
-                            50: '#eff6ff',
-                            100: '#dbeafe',
-                            500: '#3b82f6',
-                            600: '#2563eb',
-                            700: '#1d4ed8',
-                            900: '#1e3a8a',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
+    <title>CitateGenie - Intelligent Citation Formatter</title>
+    <meta name="description" content="CitateGenie automatically formats your citations in any style. Upload your document, review the suggestions, and download perfectly formatted references.">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300;1,400&display=swap');
         
-        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
-        .citation-text { font-family: 'Merriweather', serif; }
-        
-        /* Custom Scrollbar - Slim & Subtle */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #3498db;
+            --accent-color: #667eea;
+            --success-color: #27ae60;
+            --warning-color: #f39c12;
+            --background: #f8f9fa;
+            --card-bg: #ffffff;
+            --text-primary: #2c3e50;
+            --text-secondary: #7f8c8d;
+            --border-radius: 12px;
+            --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
 
-        .loader {
-            border: 2px solid #e2e8f0;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.6;
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        
+        .serif { font-family: 'Merriweather', serif; }
+
+        /* Landing Page Styles */
+        .landing-page {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .landing-container {
+            max-width: 700px;
+            width: 100%;
+            margin: 0 auto;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .landing-header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .landing-header h1 {
+            font-size: 2.8rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+            font-weight: 700;
+        }
+
+        .version-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin-bottom: 15px;
+            backdrop-filter: blur(10px);
+        }
+
+        .landing-header p {
+            font-size: 1.15rem;
+            opacity: 0.95;
+            max-width: 550px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        .main-card {
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            padding: 35px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+        }
+
+        .style-selector {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e1e8ed;
+            border-radius: 8px;
+            font-size: 1rem;
+            background: white;
+            cursor: pointer;
+            transition: border-color 0.3s ease;
+        }
+
+        .style-selector:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+
+        .style-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .output-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.75rem;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+        
+        .output-footnote { background: #dbeafe; color: #1e40af; }
+        .output-author-date { background: #d1fae5; color: #047857; }
+
+        .file-upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 12px;
+            padding: 50px 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #fafafa;
+        }
+
+        .file-upload-area:hover {
+            border-color: var(--accent-color);
+            background: #f0f4ff;
+        }
+
+        .file-upload-area.drag-over {
+            border-color: var(--success-color);
+            background: #e8f5e9;
+        }
+
+        .file-upload-icon {
+            font-size: 48px;
+            color: #9ca3af;
+            margin-bottom: 15px;
+        }
+
+        .file-upload-area:hover .file-upload-icon {
+            color: var(--accent-color);
+        }
+
+        .file-upload-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 5px;
+        }
+
+        .file-upload-subtitle {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .file-selected {
+            display: none;
+            background: #eff6ff;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-top: 15px;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .file-selected.show {
+            display: flex;
+        }
+
+        .file-selected-name {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #1e40af;
+            font-weight: 500;
+        }
+
+        .file-selected-remove {
+            background: none;
+            border: none;
+            color: #6b7280;
+            cursor: pointer;
+            padding: 5px;
+        }
+
+        .file-selected-remove:hover {
+            color: #ef4444;
+        }
+
+        .btn {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .info-box {
+            background: linear-gradient(135deg, #e8f4fd 0%, #dbeafe 100%);
+            border-left: 4px solid var(--secondary-color);
+            padding: 18px 22px;
+            margin-top: 25px;
+            border-radius: 0 10px 10px 0;
+        }
+
+        .info-box-title {
+            font-weight: 700;
+            color: #1e40af;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .info-box ol {
+            margin: 0;
+            padding-left: 20px;
+            color: #374151;
+        }
+
+        .info-box li {
+            margin-bottom: 6px;
+            font-size: 0.9rem;
+        }
+
+        .progress-container {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .progress-container.active {
+            display: block;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: #e1e8ed;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .progress-text {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .footer-links {
+            text-align: center;
+            margin-top: 20px;
+            color: rgba(255,255,255,0.8);
+            font-size: 0.85rem;
+        }
+
+        .footer-links a {
+            color: rgba(255,255,255,0.9);
+            text-decoration: none;
+            margin: 0 10px;
+        }
+
+        .footer-links a:hover {
+            text-decoration: underline;
+        }
+
+        /* Workbench Styles */
+        .workbench {
+            display: none;
+            height: 100vh;
+            flex-direction: column;
+            overflow: hidden;
+            background: #f8fafc;
+        }
+
+        .workbench.active {
+            display: flex;
+        }
+
+        .workbench-header {
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 0 24px;
+            height: 64px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .workbench-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .workbench-logo-icon {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            font-size: 1.1rem;
+        }
+
+        .workbench-logo-text h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .workbench-logo-text p {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+
+        .workbench-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .progress-badge {
+            font-size: 0.75rem;
+            background: #dbeafe;
+            color: #1e40af;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+
+        .btn-reset {
+            background: none;
+            border: none;
+            color: #6b7280;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            padding: 8px 12px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-reset:hover {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .workbench-main {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 340px;
+            background: white;
+            border-right: 1px solid #e5e7eb;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .sidebar-header {
+            padding: 16px;
+            border-bottom: 1px solid #f3f4f6;
+            background: linear-gradient(to bottom, #f9fafb, white);
+        }
+
+        .file-display {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #eff6ff;
+            padding: 10px 14px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+
+        .file-display-name {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #1e40af;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sidebar-stats {
+            padding: 10px 16px;
+            border-bottom: 1px solid #f3f4f6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-stats-label {
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .sidebar-stats-counts {
+            display: flex;
+            gap: 8px;
+        }
+
+        .count-badge {
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 500;
+        }
+
+        .count-badge-total {
+            background: #f3f4f6;
+            color: #4b5563;
+        }
+
+        .count-badge-accepted {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .citation-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+
+        .citation-list-empty {
+            text-align: center;
+            padding: 48px 20px;
+            color: #9ca3af;
+        }
+
+        .citation-list-empty i {
+            font-size: 3rem;
+            margin-bottom: 12px;
+            opacity: 0.3;
+        }
+
+        .citation-item {
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid #e5e7eb;
+            background: white;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .citation-item:hover {
+            border-color: #9ca3af;
+        }
+
+        .citation-item.active {
+            border-color: #3b82f6;
+            background: #eff6ff;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .citation-item.accepted {
+            border-left: 3px solid #22c55e;
+            background: #f0fdf4;
+        }
+
+        .citation-item-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .citation-item-num {
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: #9ca3af;
+        }
+
+        .citation-item-text {
+            font-size: 0.875rem;
+            color: #374151;
+            font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .citation-item-status {
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+
+        .download-area {
+            padding: 16px;
+            border-top: 1px solid #e5e7eb;
+            display: none;
+        }
+
+        .download-area.show {
+            display: block;
+        }
+
+        .btn-download {
+            width: 100%;
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            color: white;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .btn-download:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+        }
+
+        /* Editor Panel */
+        .editor-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .editor-empty {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+        }
+
+        .editor-empty-content {
+            text-align: center;
+            max-width: 400px;
+        }
+
+        .editor-empty-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+        }
+
+        .editor-empty-icon i {
+            font-size: 2rem;
+            color: #6366f1;
+        }
+
+        .editor-empty h2 {
+            font-size: 1.25rem;
+            color: #374151;
+            margin-bottom: 8px;
+        }
+
+        .editor-empty p {
+            font-size: 0.9rem;
+            color: #6b7280;
+        }
+
+        .editor-header {
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .editor-header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .editor-num-badge {
+            background: #22c55e;
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 6px 12px;
+            border-radius: 20px;
+        }
+
+        .editor-header-text h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #1f2937;
+        }
+
+        .editor-header-text p {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+
+        .editor-nav {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .type-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            padding: 4px 10px;
+            border-radius: 4px;
+            background: #f3f4f6;
+            color: #4b5563;
+        }
+
+        .nav-btn {
+            background: none;
+            border: none;
+            padding: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            color: #6b7280;
+        }
+
+        .nav-btn:hover:not(:disabled) {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .nav-position {
+            font-size: 0.75rem;
+            color: #6b7280;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .editor-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+
+        .editor-content-inner {
+            max-width: 720px;
+            margin: 0 auto;
+        }
+
+        .editor-card {
+            background: white;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+            overflow: hidden;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .editor-card-header {
+            padding: 12px 20px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .editor-card-header.original {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border-color: #fcd34d;
+        }
+
+        .editor-card-header.final {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            border-color: #93c5fd;
+        }
+
+        .editor-card-header p {
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .editor-card-header.original p { color: #92400e; }
+        .editor-card-header.final p { color: #1e40af; }
+
+        .editor-card-body {
+            padding: 20px;
+        }
+
+        .editor-card-body.original p {
+            font-style: italic;
+            color: #4b5563;
+            line-height: 1.7;
+        }
+
+        .editor-card.final-card {
+            border: 2px solid #93c5fd;
+            box-shadow: 0 0 0 4px rgba(147, 197, 253, 0.2);
+        }
+
+        .editor-textarea {
+            width: 100%;
+            padding: 16px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 1rem;
+            line-height: 1.6;
+            resize: vertical;
+            min-height: 120px;
+            font-family: inherit;
+        }
+
+        .editor-textarea:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .editor-card-footer {
+            padding: 16px 20px;
+            background: #f9fafb;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-accept {
+            flex: 1;
+            background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .btn-accept:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+
+        .btn-accept.success {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        }
+
+        .btn-icon {
+            background: white;
+            border: 1px solid #d1d5db;
+            padding: 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            color: #6b7280;
+        }
+
+        .btn-icon:hover {
+            background: #f9fafb;
+            border-color: #9ca3af;
+        }
+
+        .alternatives-section {
+            margin-top: 24px;
+        }
+
+        .alternatives-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .alternatives-title {
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #6b7280;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-refresh {
+            background: none;
+            border: none;
+            color: #3b82f6;
+            font-size: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .btn-refresh:hover {
+            color: #1d4ed8;
+        }
+
+        .alternative-card {
+            padding: 16px;
+            background: white;
+            border-radius: 10px;
+            border: 1px solid #e5e7eb;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .alternative-card:hover {
+            border-color: #3b82f6;
+            background: #f8faff;
+        }
+
+        .alternative-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .alternative-badges {
+            display: flex;
+            gap: 6px;
+        }
+
+        .alternative-title {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #1f2937;
+            margin-bottom: 4px;
+        }
+
+        .alternative-authors {
+            font-size: 0.8rem;
+            color: #6b7280;
+        }
+
+        .alternative-journal {
+            font-size: 0.8rem;
+            color: #9ca3af;
+            font-style: italic;
+            margin-top: 4px;
+        }
+
+        /* Success Panel */
+        .success-panel {
+            flex: 1;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+        }
+
+        .success-panel.active {
+            display: flex;
+        }
+
+        .success-content {
+            text-align: center;
+            max-width: 450px;
+        }
+
+        .success-icon {
+            width: 96px;
+            height: 96px;
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            border-radius: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            box-shadow: 0 10px 25px rgba(34, 197, 94, 0.3);
+        }
+
+        .success-icon i {
+            font-size: 2.5rem;
+            color: white;
+        }
+
+        .success-content h2 {
+            font-size: 1.5rem;
+            color: #1f2937;
+            margin-bottom: 8px;
+        }
+
+        .success-content > p {
+            color: #6b7280;
+            margin-bottom: 24px;
+        }
+
+        .success-stats {
+            background: white;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+            padding: 24px;
+            margin-bottom: 24px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .success-stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .success-stat-value.total { color: #374151; }
+        .success-stat-value.accepted { color: #22c55e; }
+
+        .success-stat-label {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+
+        .success-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .btn-success-download {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            color: white;
+            border: none;
+            padding: 16px;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: all 0.2s;
+        }
+
+        .btn-success-download:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(34, 197, 94, 0.3);
+        }
+
+        .btn-secondary {
+            background: white;
+            border: 1px solid #d1d5db;
+            color: #374151;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-secondary:hover {
+            background: #f9fafb;
+        }
+
+        .btn-link {
+            background: none;
+            border: none;
+            color: #6b7280;
+            font-size: 0.875rem;
+            cursor: pointer;
+            margin-top: 16px;
+        }
+
+        .btn-link:hover {
+            color: #374151;
+        }
+
+        /* Processing Overlay */
+        .processing-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .processing-overlay.active {
+            display: flex;
+        }
+
+        .processing-modal {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+        }
+
+        .processing-icon {
+            width: 64px;
+            height: 64px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border-radius: 50%;
-            border-top: 2px solid #2563eb;
-            width: 16px;
-            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+        }
+
+        .processing-icon i {
+            font-size: 1.5rem;
+            color: white;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .processing-modal h3 {
+            font-size: 1.25rem;
+            color: #1f2937;
+            margin-bottom: 8px;
+        }
+
+        .processing-modal > p {
+            font-size: 0.875rem;
+            color: #6b7280;
+            margin-bottom: 24px;
+        }
+
+        .processing-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 16px;
+            font-size: 0.875rem;
+            color: #4b5563;
+        }
+
+        .processing-dot {
+            width: 8px;
+            height: 8px;
+            background: #3b82f6;
+            border-radius: 50%;
+            animation: ping 1s ease-in-out infinite;
+        }
+
+        @keyframes ping {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.5; }
+        }
+
+        .processing-bar {
+            height: 6px;
+            background: #e5e7eb;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .processing-bar-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .processing-note {
+            font-size: 0.75rem;
+            color: #9ca3af;
+            margin-top: 16px;
+        }
+
+        /* Type badges */
+        .badge-legal { background: #fef3c7; color: #92400e; }
+        .badge-journal { background: #d1fae5; color: #065f46; }
+        .badge-book { background: #dbeafe; color: #1e40af; }
+        .badge-medical { background: #fce7f3; color: #9d174d; }
+        .badge-url { background: #e0f2fe; color: #0369a1; }
+        .badge-newspaper { background: #fef9c3; color: #854d0e; }
+        .badge-government { background: #f3e8ff; color: #7c3aed; }
+        .badge-unknown { background: #f1f5f9; color: #475569; }
+
+        /* Loader */
+        .loader {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #e5e7eb;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        /* Citation Item Transitions */
-        .citation-item {
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        
-        /* Active State logic */
-        .citation-item.active {
-            background-color: #fff;
-            border-left-color: #2563eb;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
 
-        /* Badge Colors */
-        .badge-legal { @apply bg-amber-50 text-amber-700 border border-amber-200; }
-        .badge-journal { @apply bg-emerald-50 text-emerald-700 border border-emerald-200; }
-        .badge-book { @apply bg-blue-50 text-blue-700 border border-blue-200; }
-        .badge-url { @apply bg-sky-50 text-sky-700 border border-sky-200; }
-        .badge-unknown { @apply bg-slate-50 text-slate-600 border border-slate-200; }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
+        /* Hide landing when workbench active */
+        .landing-page.hidden { display: none; }
     </style>
 </head>
-<body class="h-screen flex flex-col overflow-hidden text-slate-800">
+<body>
 
-    <header class="bg-white border-b border-slate-200 h-16 flex-shrink-0 z-30 relative">
-        <div class="h-full px-6 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <div class="bg-brand-600 text-white w-9 h-9 flex items-center justify-center rounded-lg shadow-sm shadow-blue-200">
-                    <i class="fas fa-quote-right text-sm"></i>
+    <!-- LANDING PAGE -->
+    <div id="landing-page" class="landing-page">
+        <div class="landing-container">
+            <header class="landing-header">
+                <div class="version-badge">Version 3.1</div>
+                <h1>✨ CitateGenie</h1>
+                <p>Automatically format your citations in any style. Upload your document, review AI-powered suggestions, and download perfectly formatted references.</p>
+            </header>
+
+            <div class="main-card">
+                <div class="form-group">
+                    <label for="style-selector">
+                        <i class="fas fa-book-open" style="color: #667eea; margin-right: 6px;"></i>
+                        Citation Style
+                    </label>
+                    <select id="style-selector" class="style-selector" onchange="updateStyleInfo()">
+                        <optgroup label="📝 Footnote/Endnote Styles">
+                            <option value="Chicago Manual of Style">Chicago Notes-Bibliography (17th ed.)</option>
+                            <option value="Bluebook">Bluebook (US Legal)</option>
+                            <option value="OSCOLA">OSCOLA (UK Legal)</option>
+                        </optgroup>
+                        <optgroup label="📖 Author-Date Styles">
+                            <option value="APA 7">APA 7th Edition</option>
+                            <option value="MLA 9">MLA 9th Edition</option>
+                            <option value="Chicago Author-Date">Chicago Author-Date</option>
+                            <option value="Harvard">Harvard</option>
+                        </optgroup>
+                    </select>
+                    <div class="style-info">
+                        <span id="style-output-badge" class="output-badge output-footnote">
+                            <i class="fas fa-superscript"></i> Footnotes
+                        </span>
+                        <span id="style-bib-title">→ Bibliography</span>
+                    </div>
                 </div>
-                <div>
-                    <h1 class="text-lg font-bold text-slate-800 tracking-tight leading-none">CitateGenie</h1>
-                    <p class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mt-0.5">Citation Workbench 3.2</p>
+
+                <div class="form-group">
+                    <label>
+                        <i class="fas fa-file-word" style="color: #667eea; margin-right: 6px;"></i>
+                        Upload Document
+                    </label>
+                    <input type="file" id="file-input" accept=".docx" style="display: none;">
+                    <div id="drop-zone" class="file-upload-area" onclick="document.getElementById('file-input').click()">
+                        <div class="file-upload-icon">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                        </div>
+                        <p class="file-upload-title">Drop your .docx file here</p>
+                        <p class="file-upload-subtitle">or click to browse</p>
+                    </div>
+                    <div id="file-selected" class="file-selected">
+                        <span class="file-selected-name">
+                            <i class="fas fa-file-word"></i>
+                            <span id="file-name"></span>
+                        </span>
+                        <button class="file-selected-remove" onclick="clearFile(event)">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <button id="process-btn" class="btn btn-primary" onclick="processDocument()" disabled>
+                    <i class="fas fa-magic"></i>
+                    Process Citations
+                </button>
+
+                <div id="progress-container" class="progress-container">
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                    <p id="progress-text" class="progress-text">Uploading document...</p>
+                </div>
+
+                <div class="info-box">
+                    <p class="info-box-title">
+                        <i class="fas fa-lightbulb"></i>
+                        How It Works
+                    </p>
+                    <ol>
+                        <li>Select your citation style above</li>
+                        <li>Upload your Word document (.docx)</li>
+                        <li>Review each citation and select the best match</li>
+                        <li>Download your perfectly formatted document</li>
+                    </ol>
                 </div>
             </div>
-            
-            <div class="flex items-center gap-4">
-                <div id="output-type-badge" class="hidden px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-2">
-                    </div>
-                
-                <div id="progress-badge" class="hidden flex items-center gap-2 px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium border border-green-100">
-                    <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                    <span id="progress-text">0/0 reviewed</span>
-                </div>
 
-                <div class="h-6 w-px bg-slate-200 mx-1"></div>
-
-                <button onclick="resetDocument()" class="text-slate-500 hover:text-red-600 transition-colors text-sm font-medium" title="Reset Session">
-                    <i class="fas fa-power-off"></i>
-                </button>
+            <div class="footer-links">
+                <span>© 2025 CitateGenie</span>
             </div>
         </div>
-    </header>
+    </div>
 
-    <main class="flex-1 flex overflow-hidden">
-        
-        <aside class="w-80 lg:w-96 bg-slate-50 border-r border-slate-200 flex flex-col z-20 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">
-            
-            <div class="p-5 border-b border-slate-200 bg-white">
-                <input type="file" id="file-input" class="hidden" accept=".docx">
-                
-                <div id="upload-controls">
-                    <div class="mb-4">
-                        <label for="style-selector" class="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Target Style</label>
-                        <div class="relative">
-                            <select id="style-selector" onchange="updateStyleInfo()" class="w-full appearance-none bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-sm rounded-lg pl-3 pr-8 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-shadow cursor-pointer font-medium">
-                                <optgroup label="Footnote/Endnote Styles">
-                                    <option value="Chicago Manual of Style">Chicago Notes-Bib (17th)</option>
-                                    <option value="Bluebook">Bluebook (US Legal)</option>
-                                    <option value="OSCOLA">OSCOLA (UK Legal)</option>
-                                </optgroup>
-                                <optgroup label="Author-Date Styles">
-                                    <option value="APA 7">APA 7th Edition</option>
-                                    <option value="MLA 9">MLA 9th Edition</option>
-                                    <option value="Chicago Author-Date">Chicago Author-Date</option>
-                                    <option value="Harvard">Harvard</option>
-                                </optgroup>
-                            </select>
-                            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500">
-                                <i class="fas fa-chevron-down text-xs"></i>
-                            </div>
-                        </div>
-                        <div class="flex items-center justify-between mt-2">
-                            <span id="style-output-type" class="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                                Footnotes
-                            </span>
-                            <span id="style-bib-title" class="text-[10px] text-slate-400">→ Bibliography</span>
-                        </div>
-                    </div>
+    <!-- WORKBENCH -->
+    <div id="workbench" class="workbench">
+        <header class="workbench-header">
+            <div class="workbench-logo">
+                <div class="workbench-logo-icon">
+                    <i class="fas fa-quote-left"></i>
+                </div>
+                <div class="workbench-logo-text">
+                    <h1>CitateGenie</h1>
+                    <p>Citation Workbench <span style="color: #3b82f6;">v3.1</span></p>
+                </div>
+            </div>
+            <div class="workbench-actions">
+                <div id="output-type-badge" class="output-badge output-footnote">
+                    <i class="fas fa-superscript"></i> Footnotes
+                </div>
+                <div id="header-progress-badge" class="progress-badge">
+                    <span id="header-progress-text">0/0 reviewed</span>
+                </div>
+                <button class="btn-reset" onclick="resetDocument()">
+                    <i class="fas fa-redo"></i> Reset
+                </button>
+            </div>
+        </header>
 
-                    <button onclick="document.getElementById('file-input').click()" id="upload-btn" class="w-full group relative flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-300 rounded-xl hover:border-brand-500 hover:bg-brand-50 transition-all cursor-pointer">
-                        <div class="w-10 h-10 bg-white rounded-full shadow-sm flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300">
-                            <i class="fas fa-cloud-upload-alt text-brand-600 text-lg"></i>
-                        </div>
-                        <span class="text-sm font-semibold text-slate-700">Upload Document</span>
-                        <span class="text-xs text-slate-400 mt-1">.docx files only</span>
-                    </button>
-                </div>
-                
-                <div id="upload-loading" class="hidden py-8 flex flex-col items-center justify-center text-slate-500">
-                    <div class="loader mb-2"></div>
-                    <span class="text-xs font-medium animate-pulse">Analyzing citations...</span>
-                </div>
-                
-                <div id="file-info" class="hidden">
-                    <div class="flex items-center gap-3 p-3 bg-brand-50 border border-brand-100 rounded-lg">
-                        <div class="bg-brand-100 text-brand-600 w-8 h-8 rounded flex items-center justify-center flex-shrink-0">
+        <main class="workbench-main">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <div class="file-display">
+                        <span class="file-display-name">
                             <i class="fas fa-file-word"></i>
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <p class="text-xs font-semibold text-brand-900 truncate" id="file-name-display">filename.docx</p>
-                            <p class="text-[10px] text-brand-600">Ready for review</p>
-                        </div>
+                            <span id="sidebar-file-name">document.docx</span>
+                        </span>
                     </div>
-                    
-                    <button onclick="downloadDocument()" id="download-area" class="hidden mt-3 w-full bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium py-2.5 rounded-lg shadow-sm hover:shadow transition-all flex items-center justify-center gap-2">
-                        <i class="fas fa-download"></i> Download
+                </div>
+                <div class="sidebar-stats">
+                    <span class="sidebar-stats-label">Citations</span>
+                    <div class="sidebar-stats-counts">
+                        <span id="accepted-count" class="count-badge count-badge-accepted" style="display: none;">0 accepted</span>
+                        <span id="citation-count" class="count-badge count-badge-total">0 total</span>
+                    </div>
+                </div>
+                <div id="citation-list" class="citation-list">
+                    <div class="citation-list-empty">
+                        <i class="fas fa-inbox"></i>
+                        <p>Citations will appear here</p>
+                    </div>
+                </div>
+                <div id="download-area" class="download-area">
+                    <button class="btn-download" onclick="downloadDocument()">
+                        <i class="fas fa-download"></i>
+                        Download Document
                     </button>
                 </div>
-            </div>
+            </aside>
 
-            <div class="px-5 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center sticky top-0 z-10">
-                <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Detected Citations</span>
-                <span id="accepted-count" class="hidden text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">0 Done</span>
-                <span id="citation-count" class="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-bold">0</span>
-            </div>
-
-            <div id="citation-list" class="flex-1 overflow-y-auto p-3 space-y-1">
-                <div id="list-empty" class="h-full flex flex-col items-center justify-center text-center p-8 opacity-40">
-                    <i class="fas fa-arrow-up text-4xl mb-4 text-slate-300"></i>
-                    <p class="text-sm font-medium text-slate-600">Upload to begin</p>
-                </div>
-            </div>
-        </aside>
-        
-        <section class="flex-1 flex flex-col bg-slate-100/50 relative">
-            
-            <div id="panel-empty" class="absolute inset-0 flex items-center justify-center bg-slate-50 z-0">
-                <div class="text-center max-w-md mx-auto p-8">
-                    <div class="w-24 h-24 bg-white rounded-3xl shadow-lg border border-slate-100 flex items-center justify-center mx-auto mb-8 relative">
-                        <div class="absolute inset-0 bg-brand-50 rounded-3xl transform rotate-6 scale-90 -z-10"></div>
-                        <i class="fas fa-wand-magic-sparkles text-4xl text-brand-500"></i>
-                    </div>
-                    <h2 class="text-2xl font-bold text-slate-800 mb-3">Welcome to CitateGenie</h2>
-                    <p class="text-slate-500 mb-8 leading-relaxed">
-                        Upload your research paper to automatically extract, format, and standardize your citations into <span class="font-semibold text-slate-700">perfect references</span>.
-                    </p>
-                    <div class="flex justify-center gap-8 opacity-60">
-                        <i class="fab fa-markdown text-3xl hover:text-black transition-colors" title="Markdown Support"></i>
-                        <i class="fas fa-file-word text-3xl hover:text-blue-700 transition-colors" title="Word Support"></i>
-                        <i class="fas fa-university text-3xl hover:text-brand-700 transition-colors" title="Academic Styles"></i>
+            <!-- Editor Panel -->
+            <section class="editor-panel">
+                <!-- Empty State -->
+                <div id="panel-empty" class="editor-empty">
+                    <div class="editor-empty-content">
+                        <div class="editor-empty-icon">
+                            <i class="fas fa-mouse-pointer"></i>
+                        </div>
+                        <h2>Select a Citation</h2>
+                        <p>Click on a citation from the list to review and edit it.</p>
                     </div>
                 </div>
-            </div>
-            
-            <div id="panel-editor" class="hidden flex-1 flex flex-col overflow-hidden z-10 bg-slate-100/50">
-                <div class="flex-1 overflow-y-auto">
-                    <div class="max-w-4xl mx-auto p-6 lg:p-10 space-y-8">
-                        
-                        <div class="flex items-center justify-between mb-6">
-                            <div>
-                                <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
-                                    Review Citation <span id="editor-citation-num" class="text-sm font-normal text-slate-400">#1</span>
-                                </h2>
-                            </div>
-                            <div class="flex items-center gap-2 bg-white rounded-lg shadow-sm border border-slate-200 p-1">
-                                <button onclick="adNavigate(-1)" id="btn-prev" class="w-8 h-8 flex items-center justify-center rounded hover:bg-slate-100 text-slate-600 disabled:opacity-30 transition-colors">
-                                    <i class="fas fa-chevron-left"></i>
-                                </button>
-                                <span id="editor-position" class="text-xs font-mono text-slate-400 min-w-[60px] text-center">1 / 5</span>
-                                <button onclick="adNavigate(1)" id="btn-next" class="w-8 h-8 flex items-center justify-center rounded hover:bg-slate-100 text-slate-600 disabled:opacity-30 transition-colors">
-                                    <i class="fas fa-chevron-right"></i>
-                                </button>
+
+                <!-- Author-Date Editor -->
+                <div id="panel-editor" style="display: none; flex-direction: column; flex: 1; overflow: hidden;">
+                    <div class="editor-header">
+                        <div class="editor-header-left">
+                            <span id="editor-citation-num" class="editor-num-badge">#1</span>
+                            <div class="editor-header-text">
+                                <h3>Resolve Citation</h3>
+                                <p>Edit or select an alternative below</p>
                             </div>
                         </div>
-
-                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                            <div class="px-8 py-6 border-b border-slate-100 bg-slate-50/50">
-                                <div class="flex items-center justify-between mb-3">
-                                    <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Original Text</label>
-                                    <span id="ad-type-badge" class="badge-unknown text-[10px] px-2 py-0.5 rounded font-bold uppercase">UNKNOWN</span>
-                                </div>
-                                <p id="original-citation-text" class="citation-text text-lg text-slate-700 leading-relaxed italic opacity-80 pl-4 border-l-4 border-slate-200">
-                                    (Smith, 2020)
-                                </p>
-                            </div>
-
-                            <div class="px-8 py-6">
-                                <div class="flex items-center justify-between mb-3">
-                                    <label class="text-[11px] font-bold text-brand-600 uppercase tracking-wider flex items-center gap-1">
-                                        <i class="fas fa-pen-nib"></i> Formatted Output
-                                    </label>
-                                    <span id="ad-status-badge" class="text-[10px] font-medium text-slate-400">Auto-generated</span>
-                                </div>
-                                
-                                <div class="relative group">
-                                    <textarea id="ad-final-textarea" class="citation-text w-full p-4 bg-white border-2 border-brand-100 rounded-xl text-lg text-slate-800 shadow-sm focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 outline-none resize-none min-h-[140px] leading-relaxed transition-all" placeholder="Citation text..."></textarea>
-                                    <div class="absolute bottom-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onclick="adCopyToClipboard()" class="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors" title="Copy">
-                                            <i class="fas fa-copy text-xs"></i>
-                                        </button>
-                                        <button onclick="adKeepOriginal()" class="w-8 h-8 rounded bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors" title="Reset to Original">
-                                            <i class="fas fa-undo text-xs"></i>
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="px-8 py-4 bg-slate-50 border-t border-slate-200 flex justify-end">
-                                <button onclick="adCommitChange()" id="ad-commit-btn" class="bg-brand-600 hover:bg-brand-700 text-white font-medium py-2.5 px-6 rounded-lg shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all flex items-center gap-2">
-                                    <span>Accept Reference</span>
-                                    <i class="fas fa-check"></i>
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="mt-8">
-                            <div class="flex items-center justify-between mb-4 px-2">
-                                <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider">Alternative Matches</h3>
-                                <button onclick="adRefreshAlternatives()" class="text-xs text-brand-600 hover:text-brand-800 font-medium flex items-center gap-1">
-                                    <i class="fas fa-sync-alt"></i> Refresh Search
-                                </button>
-                            </div>
-                            <div id="ad-alternatives-list" class="grid gap-3">
-                                <div class="p-6 bg-white rounded-xl border border-slate-200 text-center text-slate-400">
-                                    <i class="fas fa-search mb-2 opacity-50"></i>
-                                    <p class="text-xs">Finding matches...</p>
-                                </div>
-                            </div>
+                        <div class="editor-nav">
+                            <span id="ad-type-badge" class="type-badge">UNKNOWN</span>
+                            <button id="btn-prev" class="nav-btn" onclick="adNavigate(-1)" disabled>
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <span id="editor-position" class="nav-position">1 of 5</span>
+                            <button id="btn-next" class="nav-btn" onclick="adNavigate(1)">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            <div id="panel-footnote-editor" class="hidden flex-1 flex flex-col overflow-hidden z-10 bg-slate-100/50">
-                <div class="flex-1 overflow-y-auto">
-                    <div class="max-w-4xl mx-auto p-6 lg:p-10 space-y-8">
-                        
-                        <div class="flex items-center justify-between mb-6">
-                            <div>
-                                <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
-                                    Review Footnote <span id="fn-editor-num" class="text-sm font-normal text-slate-400">#1</span>
-                                </h2>
-                            </div>
-                            <div class="flex items-center gap-2 bg-white rounded-lg shadow-sm border border-slate-200 p-1">
-                                <button onclick="fnNavigate(-1)" id="fn-btn-prev" class="w-8 h-8 flex items-center justify-center rounded hover:bg-slate-100 text-slate-600 disabled:opacity-30 transition-colors">
-                                    <i class="fas fa-chevron-left"></i>
-                                </button>
-                                <span id="fn-editor-position" class="text-xs font-mono text-slate-400 min-w-[60px] text-center">1 / 5</span>
-                                <button onclick="fnNavigate(1)" id="fn-btn-next" class="w-8 h-8 flex items-center justify-center rounded hover:bg-slate-100 text-slate-600 disabled:opacity-30 transition-colors">
-                                    <i class="fas fa-chevron-right"></i>
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                            <div class="px-8 py-5 border-b border-slate-100 bg-slate-50/50 flex items-start gap-4">
-                                <div class="flex-1">
-                                    <div class="flex items-center justify-between mb-2">
-                                        <label class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Raw Footnote Text</label>
-                                        <span id="fn-type-badge" class="badge-unknown text-[10px] px-2 py-0.5 rounded font-bold uppercase">UNKNOWN</span>
-                                    </div>
-                                    <p id="fn-original-text" class="text-sm text-slate-600 italic">loading...</p>
+                    <div class="editor-content">
+                        <div class="editor-content-inner">
+                            <div class="editor-card">
+                                <div class="editor-card-header original">
+                                    <p><i class="fas fa-file-alt"></i> Original in Document</p>
+                                </div>
+                                <div class="editor-card-body original">
+                                    <p id="original-citation-text">(Smith, 2020)</p>
                                 </div>
                             </div>
 
-                            <div class="px-8 py-6">
-                                <div class="flex items-center justify-between mb-3">
-                                    <label class="text-[11px] font-bold text-brand-600 uppercase tracking-wider flex items-center gap-1">
-                                        <i class="fas fa-pen-nib"></i> Formatted Note
-                                    </label>
+                            <div class="editor-card final-card">
+                                <div class="editor-card-header final">
+                                    <p><i class="fas fa-pen-nib"></i> Final Citation</p>
                                 </div>
-                                <textarea id="fn-final-textarea" class="citation-text w-full p-4 bg-white border-2 border-brand-100 rounded-xl text-lg text-slate-800 shadow-sm focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 outline-none resize-none min-h-[140px] leading-relaxed transition-all" placeholder="Formatting..."></textarea>
-                            </div>
-
-                            <div class="px-8 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-                                <button onclick="fnAppendMode()" class="text-xs text-slate-500 hover:text-brand-600 font-medium flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-200 transition-colors" title="Add another source to this footnote">
-                                    <i class="fas fa-plus-circle"></i> Append Source
-                                </button>
-                                <div class="flex gap-3">
-                                    <button onclick="fnCopyToClipboard()" class="w-10 h-10 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 transition-colors">
+                                <div class="editor-card-body">
+                                    <textarea id="ad-final-textarea" class="editor-textarea" placeholder="Auto-resolved citation will appear here..."></textarea>
+                                </div>
+                                <div class="editor-card-footer">
+                                    <button id="ad-commit-btn" class="btn-accept" onclick="adCommitChange()">
+                                        <i class="fas fa-check"></i> Accept & Save
+                                    </button>
+                                    <button class="btn-icon" onclick="adCopyToClipboard()" title="Copy to clipboard">
                                         <i class="fas fa-copy"></i>
                                     </button>
-                                    <button onclick="fnCommitChange()" id="fn-commit-btn" class="bg-brand-600 hover:bg-brand-700 text-white font-medium py-2 px-6 rounded-lg shadow-sm hover:shadow-md transition-all flex items-center gap-2">
-                                        <i class="fas fa-check"></i> Save Note
+                                    <button class="btn-icon" onclick="adKeepOriginal()" title="Keep original">
+                                        <i class="fas fa-undo"></i>
                                     </button>
                                 </div>
                             </div>
-                        </div>
 
-                        <div class="mt-8">
-                            <div class="flex items-center justify-between mb-4 px-2">
-                                <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider">Database Matches</h3>
-                                <button onclick="fnSearchAlternatives()" class="text-xs text-brand-600 hover:text-brand-800 font-medium flex items-center gap-1">
-                                    <i class="fas fa-sync-alt"></i> Refresh
-                                </button>
-                            </div>
-                            <div id="fn-alternatives-list" class="grid gap-3">
-                                <div class="p-6 bg-white rounded-xl border border-slate-200 text-center text-slate-400">
-                                    <div class="loader mx-auto mb-2"></div>
-                                    <p class="text-xs">Searching databases...</p>
+                            <div class="alternatives-section">
+                                <div class="alternatives-header">
+                                    <span class="alternatives-title">
+                                        <i class="fas fa-magic"></i> Alternative Resolutions
+                                    </span>
+                                    <button class="btn-refresh" onclick="adRefreshAlternatives()">
+                                        <i class="fas fa-sync-alt"></i> Refresh
+                                    </button>
+                                </div>
+                                <div id="ad-alternatives-list">
+                                    <div class="alternative-card" style="text-align: center; color: #9ca3af;">
+                                        <i class="fas fa-search" style="font-size: 1.5rem; margin-bottom: 8px; opacity: 0.3;"></i>
+                                        <p>Loading alternatives...</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-
                     </div>
                 </div>
-            </div>
-            
-            <div id="panel-success" class="hidden absolute inset-0 bg-white z-20 flex items-center justify-center">
-                <div class="text-center max-w-lg mx-auto p-6">
-                    <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 animate-[bounce_1s_infinite]">
-                        <i class="fas fa-check text-3xl text-green-600"></i>
-                    </div>
-                    
-                    <h2 class="text-3xl font-bold text-slate-800 mb-2">Processing Complete</h2>
-                    <p class="text-slate-500 mb-8">Your citations have been standardized and the bibliography generated.</p>
-                    
-                    <div class="grid grid-cols-2 gap-4 mb-8">
-                        <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                            <span class="block text-3xl font-bold text-slate-800 mb-1" id="final-total">0</span>
-                            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Citations</span>
+
+                <!-- Footnote Editor -->
+                <div id="panel-footnote-editor" style="display: none; flex-direction: column; flex: 1; overflow: hidden;">
+                    <div class="editor-header">
+                        <div class="editor-header-left">
+                            <span id="fn-editor-num" class="editor-num-badge" style="background: #3b82f6;">Note 1</span>
+                            <div class="editor-header-text">
+                                <h3>Resolve Citation</h3>
+                                <p>Edit or select an alternative below</p>
+                            </div>
                         </div>
-                        <div class="p-4 bg-green-50 rounded-2xl border border-green-100">
-                            <span class="block text-3xl font-bold text-green-600 mb-1" id="final-accepted">0</span>
-                            <span class="text-xs font-bold text-green-600/70 uppercase tracking-wider">Formatted</span>
+                        <div class="editor-nav">
+                            <span id="fn-type-badge" class="type-badge">UNKNOWN</span>
+                            <button id="fn-btn-prev" class="nav-btn" onclick="fnNavigate(-1)" disabled>
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <span id="fn-editor-position" class="nav-position">1 of 5</span>
+                            <button id="fn-btn-next" class="nav-btn" onclick="fnNavigate(1)">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
                         </div>
                     </div>
-                    
-                    <div class="space-y-3">
-                        <button onclick="downloadDocument()" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-4 rounded-xl shadow-lg hover:shadow-brand-500/30 transition-all flex items-center justify-center gap-2">
-                            <i class="fas fa-file-word text-lg"></i> Download DOCX
+                    <div class="editor-content">
+                        <div class="editor-content-inner">
+                            <div class="editor-card">
+                                <div class="editor-card-header original">
+                                    <p><i class="fas fa-file-alt"></i> Original Citation</p>
+                                </div>
+                                <div class="editor-card-body original">
+                                    <p id="fn-original-text">Citation text here...</p>
+                                </div>
+                            </div>
+
+                            <div class="editor-card final-card">
+                                <div class="editor-card-header final">
+                                    <p><i class="fas fa-pen-nib"></i> Final Citation</p>
+                                </div>
+                                <div class="editor-card-body">
+                                    <textarea id="fn-final-textarea" class="editor-textarea" placeholder="Auto-resolved citation will appear here..."></textarea>
+                                </div>
+                                <div class="editor-card-footer">
+                                    <button id="fn-commit-btn" class="btn-accept" onclick="fnCommitChange()">
+                                        <i class="fas fa-check"></i> Accept & Save
+                                    </button>
+                                    <button class="btn-icon" onclick="fnCopyToClipboard()" title="Copy to clipboard">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                    <button class="btn-icon" onclick="fnAppendMode()" title="Append another source">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="alternatives-section">
+                                <div class="alternatives-header">
+                                    <span class="alternatives-title">
+                                        <i class="fas fa-magic"></i> Alternative Resolutions
+                                    </span>
+                                    <button class="btn-refresh" onclick="fnSearchAlternatives()">
+                                        <i class="fas fa-sync-alt"></i> Refresh
+                                    </button>
+                                </div>
+                                <div id="fn-alternatives-list">
+                                    <div class="alternative-card" style="text-align: center; color: #9ca3af;">
+                                        <i class="fas fa-search" style="font-size: 1.5rem; margin-bottom: 8px; opacity: 0.3;"></i>
+                                        <p>Loading alternatives...</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Success Panel -->
+                <div id="panel-success" class="success-panel">
+                    <div class="success-content">
+                        <div class="success-icon">
+                            <i class="fas fa-check"></i>
+                        </div>
+                        <h2>All Citations Reviewed!</h2>
+                        <p>Your document is ready with properly formatted references.</p>
+                        <div class="success-stats">
+                            <div>
+                                <p id="final-total" class="success-stat-value total">0</p>
+                                <p class="success-stat-label">Citations Found</p>
+                            </div>
+                            <div>
+                                <p id="final-accepted" class="success-stat-value accepted">0</p>
+                                <p class="success-stat-label">References Added</p>
+                            </div>
+                        </div>
+                        <div class="success-actions">
+                            <button class="btn-success-download" onclick="downloadDocument()">
+                                <i class="fas fa-download"></i>
+                                Download Processed Document
+                            </button>
+                            <button class="btn-secondary" onclick="exportMetadataCSV()">
+                                <i class="fas fa-file-csv"></i>
+                                Export Citations as CSV
+                            </button>
+                            <button class="btn-secondary" onclick="backToReview()">
+                                <i class="fas fa-edit"></i>
+                                Back to Review
+                            </button>
+                        </div>
+                        <button class="btn-link" onclick="resetDocument()">
+                            <i class="fas fa-redo"></i> Process Another Document
                         </button>
-                        
-                        <div class="flex gap-3">
-                            <button onclick="exportMetadataCSV()" class="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium py-3 rounded-xl transition-colors text-sm">
-                                <i class="fas fa-table mr-2 text-slate-400"></i> Export CSV
-                            </button>
-                            <button onclick="backToReview()" class="flex-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium py-3 rounded-xl transition-colors text-sm">
-                                <i class="fas fa-edit mr-2 text-slate-400"></i> Keep Editing
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <button onclick="resetDocument()" class="mt-8 text-xs text-slate-400 hover:text-slate-600 font-medium">
-                        Start Over
-                    </button>
-                </div>
-            </div>
-            
-            <div id="processing-overlay" class="hidden absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
-                <div class="bg-white rounded-2xl shadow-2xl border border-slate-100 p-8 max-w-sm w-full text-center">
-                    <div class="w-12 h-12 bg-brand-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <div class="loader"></div>
-                    </div>
-                    <h3 class="text-lg font-bold text-slate-800 mb-1">Processing</h3>
-                    <p id="processing-step" class="text-sm text-slate-500 mb-6">Analyzing document...</p>
-                    
-                    <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                        <div id="processing-progress" class="bg-brand-500 h-full rounded-full transition-all duration-500" style="width: 10%"></div>
                     </div>
                 </div>
-            </div>
+            </section>
+        </main>
+    </div>
 
-        </section>
-    </main>
+    <!-- Processing Overlay -->
+    <div id="processing-overlay" class="processing-overlay">
+        <div class="processing-modal">
+            <div class="processing-icon">
+                <i class="fas fa-magic"></i>
+            </div>
+            <h3>Processing Document</h3>
+            <p>Looking up your citations...</p>
+            <div class="processing-status">
+                <span class="processing-dot"></span>
+                <span id="processing-step">Extracting citations...</span>
+            </div>
+            <div class="processing-bar">
+                <div id="processing-progress" class="processing-bar-fill" style="width: 10%;"></div>
+            </div>
+            <p class="processing-note">This may take a moment for documents with many citations</p>
+        </div>
+    </div>
 
     <script>
         /*
-         * CitateGenie 3.2 - UI Refactor
-         * Logic unchanged from 3.1
+         * CitateGenie 3.1 - Redesigned UI
+         * Beautiful landing page + powerful workbench
          */
         
+        // ========== STATE ==========
         let currentSessionId = null;
         let currentCitations = [];
         let activeCitationIndex = -1;
@@ -439,42 +1595,98 @@
             'Harvard': { type: 'author-date', bib: 'Bibliography' },
         };
         
+        // ========== INITIALIZATION ==========
         document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('file-input').addEventListener('change', handleFileUpload);
+            const fileInput = document.getElementById('file-input');
+            const dropZone = document.getElementById('drop-zone');
+            
+            fileInput.addEventListener('change', handleFileSelect);
+            
+            // Drag and drop
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, preventDefaults, false);
+            });
+            
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => dropZone.classList.add('drag-over'), false);
+            });
+            
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => dropZone.classList.remove('drag-over'), false);
+            });
+            
+            dropZone.addEventListener('drop', handleDrop, false);
+            
             updateStyleInfo();
         });
         
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        function handleDrop(e) {
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].name.endsWith('.docx')) {
+                document.getElementById('file-input').files = files;
+                showSelectedFile(files[0].name);
+            }
+        }
+        
+        function handleFileSelect(e) {
+            if (e.target.files.length > 0) {
+                showSelectedFile(e.target.files[0].name);
+            }
+        }
+        
+        function showSelectedFile(name) {
+            document.getElementById('file-name').textContent = name;
+            document.getElementById('file-selected').classList.add('show');
+            document.getElementById('drop-zone').style.display = 'none';
+            document.getElementById('process-btn').disabled = false;
+        }
+        
+        function clearFile(e) {
+            e.stopPropagation();
+            document.getElementById('file-input').value = '';
+            document.getElementById('file-selected').classList.remove('show');
+            document.getElementById('drop-zone').style.display = 'block';
+            document.getElementById('process-btn').disabled = true;
+        }
+        
+        // ========== STYLE INFO ==========
         function updateStyleInfo() {
             currentStyle = document.getElementById('style-selector').value;
             const info = STYLE_INFO[currentStyle] || { type: 'footnote', bib: 'Bibliography' };
             outputType = info.type;
             
-            const typeEl = document.getElementById('style-output-type');
-            const bibEl = document.getElementById('style-bib-title');
+            const badge = document.getElementById('style-output-badge');
+            const bibTitle = document.getElementById('style-bib-title');
             
             if (info.type === 'footnote') {
-                typeEl.innerHTML = 'Footnotes';
-                typeEl.className = 'text-[10px] font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded';
+                badge.innerHTML = '<i class="fas fa-superscript"></i> Footnotes';
+                badge.className = 'output-badge output-footnote';
             } else {
-                typeEl.innerHTML = 'Author-Date';
-                typeEl.className = 'text-[10px] font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded';
+                badge.innerHTML = '<i class="fas fa-user-clock"></i> Author-Date';
+                badge.className = 'output-badge output-author-date';
             }
             
-            bibEl.textContent = `→ ${info.bib}`;
+            bibTitle.textContent = `→ ${info.bib}`;
         }
         
-        async function handleFileUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
+        // ========== PROCESS DOCUMENT ==========
+        async function processDocument() {
+            const fileInput = document.getElementById('file-input');
+            const file = fileInput.files[0];
             
-            if (!file.name.endsWith('.docx')) {
-                alert('Please upload a .docx file');
+            if (!file) {
+                alert('Please select a file first');
                 return;
             }
             
-            // UI Updates
-            document.getElementById('upload-loading').classList.remove('hidden');
-            document.getElementById('upload-controls').classList.add('hidden');
+            // Show progress
+            document.getElementById('progress-container').classList.add('active');
+            document.getElementById('process-btn').disabled = true;
             showProcessingOverlay();
             
             const formData = new FormData();
@@ -488,126 +1700,164 @@
             
             try {
                 updateProcessingStatus('Uploading document...', 20);
-                const response = await fetch(endpoint, { method: 'POST', body: formData });
+                
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: formData
+                });
+                
                 updateProcessingStatus('Processing citations...', 60);
+                
                 const data = await response.json();
                 
-                if (!data.success) throw new Error(data.error || 'Processing failed');
+                if (!data.success) {
+                    throw new Error(data.error || 'Processing failed');
+                }
                 
                 updateProcessingStatus('Preparing review...', 90);
+                
                 currentSessionId = data.session_id;
                 currentCitations = data.citations || data.notes || [];
                 
-                document.getElementById('file-name-display').textContent = file.name;
-                document.getElementById('file-info').classList.remove('hidden');
-                document.getElementById('upload-loading').classList.add('hidden');
+                if (currentCitations.length === 0) {
+                    hideProcessingOverlay();
+                    document.getElementById('progress-container').classList.remove('active');
+                    document.getElementById('process-btn').disabled = false;
+                    alert('No citations found in document');
+                    return;
+                }
+                
+                // Switch to workbench
+                document.getElementById('landing-page').classList.add('hidden');
+                document.getElementById('workbench').classList.add('active');
+                
+                // Update workbench header
+                document.getElementById('sidebar-file-name').textContent = file.name;
+                document.getElementById('citation-count').textContent = `${currentCitations.length} total`;
                 
                 const headerBadge = document.getElementById('output-type-badge');
-                headerBadge.classList.remove('hidden');
-                
                 if (outputType === 'footnote') {
-                    headerBadge.innerHTML = '<i class="fas fa-superscript text-blue-500"></i><span>Footnotes</span>';
+                    headerBadge.innerHTML = '<i class="fas fa-superscript"></i> Footnotes';
+                    headerBadge.className = 'output-badge output-footnote';
                 } else {
-                    headerBadge.innerHTML = '<i class="fas fa-calendar-alt text-emerald-500"></i><span>Author-Date</span>';
+                    headerBadge.innerHTML = '<i class="fas fa-user-clock"></i> Author-Date';
+                    headerBadge.className = 'output-badge output-author-date';
                 }
                 
-                document.getElementById('citation-count').textContent = `${currentCitations.length}`;
-                
-                if (outputType === 'author-date' && currentCitations.length > 0) {
+                // Render citations and load editor
+                if (outputType === 'author-date') {
                     renderCitationList();
                     selectCitation(0);
-                    document.getElementById('panel-empty').classList.add('hidden');
-                    document.getElementById('panel-editor').classList.remove('hidden');
-                    document.getElementById('panel-footnote-editor').classList.add('hidden');
-                    document.getElementById('panel-success').classList.add('hidden');
-                    document.getElementById('progress-badge').classList.remove('hidden');
-                    updateProgressBadge();
-                } else if (outputType === 'footnote' && currentCitations.length > 0) {
+                    document.getElementById('panel-empty').style.display = 'none';
+                    document.getElementById('panel-editor').style.display = 'flex';
+                    document.getElementById('panel-footnote-editor').style.display = 'none';
+                } else {
                     fnRenderCitationList();
                     fnLoadEditor(0);
-                    document.getElementById('panel-empty').classList.add('hidden');
-                    document.getElementById('panel-editor').classList.add('hidden');
-                    document.getElementById('panel-footnote-editor').classList.remove('hidden');
-                    document.getElementById('panel-success').classList.add('hidden');
-                    document.getElementById('download-area').classList.remove('hidden');
-                    document.getElementById('progress-badge').classList.remove('hidden');
-                    fnUpdateProgressBadge();
-                } else {
-                    alert('No citations found in document');
-                    resetDocument();
+                    document.getElementById('panel-empty').style.display = 'none';
+                    document.getElementById('panel-editor').style.display = 'none';
+                    document.getElementById('panel-footnote-editor').style.display = 'flex';
+                    document.getElementById('download-area').classList.add('show');
                 }
+                
+                updateProgressBadge();
                 hideProcessingOverlay();
+                
             } catch (error) {
                 console.error('Upload error:', error);
                 hideProcessingOverlay();
-                document.getElementById('upload-loading').classList.add('hidden');
-                document.getElementById('upload-controls').classList.remove('hidden');
+                document.getElementById('progress-container').classList.remove('active');
+                document.getElementById('process-btn').disabled = false;
                 alert('Error processing document: ' + error.message);
             }
         }
         
-        /* CITATION LIST RENDERER (Cleaned up HTML) */
+        // ========== CITATION LIST (Author-Date) ==========
         function renderCitationList() {
             const container = document.getElementById('citation-list');
-            if (currentCitations.length === 0) return;
+            
+            if (currentCitations.length === 0) {
+                container.innerHTML = `
+                    <div class="citation-list-empty">
+                        <i class="fas fa-inbox"></i>
+                        <p>No citations found</p>
+                    </div>
+                `;
+                return;
+            }
             
             let html = '';
             currentCitations.forEach((cite, idx) => {
                 const isActive = idx === activeCitationIndex;
                 const isAccepted = cite.accepted;
                 
-                let borderClass = isActive ? 'active' : 'border-l-4 border-transparent hover:bg-slate-100';
-                let icon = isAccepted ? '<i class="fas fa-check-circle text-green-500 text-xs"></i>' : '<i class="fas fa-circle text-slate-300 text-[8px]"></i>';
+                let classes = 'citation-item';
+                if (isActive) classes += ' active';
+                if (isAccepted) classes += ' accepted';
+                
+                const statusIcon = isAccepted 
+                    ? '<i class="fas fa-check-circle" style="color: #22c55e;"></i>'
+                    : '<i class="fas fa-clock" style="color: #f59e0b;"></i>';
+                
+                const isUrl = cite.is_url || false;
+                let displayText = cite.original || '';
+                if (isUrl && displayText.length > 40) {
+                    displayText = displayText.substring(0, 37) + '...';
+                }
                 
                 html += `
-                    <div onclick="selectCitation(${idx})" id="cite-${idx}" 
-                         class="citation-item ${borderClass} p-3 cursor-pointer rounded-r-lg group">
-                        <div class="flex items-center justify-between mb-1">
-                            <span class="text-[10px] font-bold text-slate-400">#${idx + 1}</span>
-                            ${icon}
+                    <div class="${classes}" onclick="selectCitation(${idx})" id="cite-${idx}">
+                        <div class="citation-item-header">
+                            <span class="citation-item-num">#${idx + 1}</span>
+                            ${statusIcon}
+                            ${isUrl ? '<span class="type-badge badge-url">URL</span>' : ''}
                         </div>
-                        <p class="text-xs text-slate-700 font-medium truncate">${escapeHtml(cite.original || 'Unknown')}</p>
+                        <p class="citation-item-text">${escapeHtml(displayText)}</p>
+                        <p class="citation-item-status">${isAccepted ? '✓ Accepted' : `${cite.options?.length || 0} options found`}</p>
                     </div>
                 `;
             });
+            
             container.innerHTML = html;
             updateAcceptedCount();
         }
         
+        // ========== SELECT CITATION (Author-Date) ==========
         function selectCitation(idx) {
             if (idx < 0 || idx >= currentCitations.length) return;
+            
             activeCitationIndex = idx;
             const cite = currentCitations[idx];
             
-            renderCitationList(); // Re-render to update active class
+            // Update list
+            document.querySelectorAll('.citation-item').forEach((el, i) => {
+                el.classList.remove('active');
+                if (i === idx) el.classList.add('active');
+            });
             
-            document.getElementById(`cite-${idx}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            const activeEl = document.getElementById(`cite-${idx}`);
+            if (activeEl) activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             
+            // Update editor
             document.getElementById('editor-citation-num').textContent = `#${idx + 1}`;
-            document.getElementById('editor-position').textContent = `${idx + 1} / ${currentCitations.length}`;
+            document.getElementById('editor-position').textContent = `${idx + 1} of ${currentCitations.length}`;
             
             const isUrl = cite.is_url || false;
+            const originalText = cite.original || '(Unknown)';
+            
             if (isUrl) {
-                 document.getElementById('original-citation-text').innerHTML = 
-                    `<span class="text-blue-600 underline">${escapeHtml(cite.original)}</span>` +
-                    (cite.parenthetical ? `<br><span class="text-sm not-italic text-slate-400 mt-2 block">Parenthetical: ${escapeHtml(cite.parenthetical)}</span>` : '');
+                const displayUrl = originalText.length > 60 ? originalText.substring(0, 57) + '...' : originalText;
+                document.getElementById('original-citation-text').innerHTML = 
+                    `<span style="color: #3b82f6;">${escapeHtml(displayUrl)}</span>` +
+                    (cite.parenthetical ? `<br><span style="font-size: 0.9rem; color: #6b7280;">→ Will become: <strong>${escapeHtml(cite.parenthetical)}</strong></span>` : '');
             } else {
-                document.getElementById('original-citation-text').textContent = cite.original || '(Unknown)';
+                document.getElementById('original-citation-text').textContent = originalText;
             }
             
             const typeBadge = document.getElementById('ad-type-badge');
-            const cType = isUrl ? 'url' : (cite.options?.[1]?.citation_type || 'unknown');
-            typeBadge.textContent = cType.toUpperCase();
-            typeBadge.className = `badge-${cType} text-[10px] px-2 py-0.5 rounded font-bold uppercase`;
-            
-            const statusBadge = document.getElementById('ad-status-badge');
-            if (cite.accepted) {
-                statusBadge.textContent = 'Saved ✓';
-                statusBadge.className = 'text-[10px] font-bold text-green-600 uppercase tracking-wide';
-            } else {
-                statusBadge.textContent = 'Suggestion';
-                statusBadge.className = 'text-[10px] font-bold text-slate-400 uppercase tracking-wide';
-            }
+            const citationType = isUrl ? 'url' : (cite.options?.[1]?.citation_type || 'unknown');
+            typeBadge.textContent = citationType.toUpperCase();
+            typeBadge.className = `type-badge badge-${citationType}`;
             
             document.getElementById('btn-prev').disabled = idx === 0;
             document.getElementById('btn-next').disabled = idx === currentCitations.length - 1;
@@ -628,6 +1878,7 @@
         
         async function adFormatRecommendedOption(cite) {
             if (!cite.options || cite.options.length < 2) return;
+            
             try {
                 const response = await fetch('/api/accept-reference', {
                     method: 'POST',
@@ -639,75 +1890,108 @@
                         style: currentStyle
                     })
                 });
+                
                 const data = await response.json();
                 if (data.success && data.formatted) {
                     cite.formatted = data.formatted;
                     document.getElementById('ad-final-textarea').value = data.formatted;
                 }
-            } catch (error) { console.error('Format error:', error); }
+            } catch (error) {
+                console.error('Format error:', error);
+            }
         }
         
+        // ========== ALTERNATIVES (Author-Date) ==========
         function adRenderAlternatives(cite) {
             const container = document.getElementById('ad-alternatives-list');
             const options = cite.options || [];
             const alternatives = options.slice(1);
             
             if (alternatives.length === 0) {
-                container.innerHTML = `<div class="p-6 bg-slate-50 rounded-xl border border-slate-200 text-center text-slate-400"><p class="text-xs">No automatic matches found.</p></div>`;
+                container.innerHTML = `
+                    <div class="alternative-card" style="text-align: center; color: #9ca3af;">
+                        <i class="fas fa-search" style="font-size: 1.5rem; margin-bottom: 8px; opacity: 0.3;"></i>
+                        <p>No alternatives found</p>
+                        <p style="font-size: 0.75rem; margin-top: 4px;">Edit manually above</p>
+                    </div>
+                `;
                 return;
             }
             
             let html = '';
             alternatives.forEach((opt, idx) => {
-                const authors = opt.authors?.length > 0 ? opt.authors.slice(0, 3).join(', ') : '';
-                const optionIndex = idx + 1;
+                const authors = opt.authors?.length > 0 
+                    ? opt.authors.slice(0, 3).join(', ') + (opt.authors.length > 3 ? ' et al.' : '')
+                    : '';
                 
                 html += `
-                    <div onclick="adSelectAlternative(${optionIndex})" 
-                         class="group p-4 bg-white rounded-xl border border-slate-200 hover:border-brand-300 hover:shadow-md cursor-pointer transition-all">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="badge-${opt.citation_type || 'unknown'} text-[10px] font-bold uppercase px-2 py-0.5 rounded">${opt.citation_type || 'Unknown'}</span>
-                            <span class="text-[10px] text-slate-400 group-hover:text-brand-500">${opt.year || ''}</span>
+                    <div class="alternative-card" onclick="adSelectAlternative(${idx + 1})">
+                        <div class="alternative-header">
+                            <div class="alternative-badges">
+                                <span class="type-badge badge-${opt.citation_type || 'unknown'}">${(opt.citation_type || 'Unknown').toUpperCase()}</span>
+                                ${opt.source ? `<span class="type-badge">${escapeHtml(opt.source)}</span>` : ''}
+                            </div>
+                            ${opt.year ? `<span style="font-size: 0.75rem; color: #6b7280;">${opt.year}</span>` : ''}
                         </div>
-                        <p class="text-sm font-semibold text-slate-800 mb-1 group-hover:text-brand-700 transition-colors">${escapeHtml(opt.title || 'Untitled')}</p>
-                        ${authors ? `<p class="text-xs text-slate-500 mb-1">${escapeHtml(authors)}</p>` : ''}
-                        <p class="text-[10px] text-slate-400 truncate">${escapeHtml(opt.journal || opt.publisher || '')}</p>
+                        <p class="alternative-title">${escapeHtml(opt.title || 'Untitled')}</p>
+                        ${authors ? `<p class="alternative-authors">${escapeHtml(authors)}</p>` : ''}
+                        ${opt.journal ? `<p class="alternative-journal">${escapeHtml(opt.journal)}</p>` : ''}
                     </div>
                 `;
             });
+            
             container.innerHTML = html;
         }
-
+        
         async function adSelectAlternative(optionIndex) {
             if (activeCitationIndex < 0) return;
+            
             const cite = currentCitations[activeCitationIndex];
+            
             try {
                 const response = await fetch('/api/accept-reference', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: currentSessionId, citation_id: cite.id || cite.note_id, selected_option: optionIndex, style: currentStyle })
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        citation_id: cite.id || cite.note_id,
+                        selected_option: optionIndex,
+                        style: currentStyle
+                    })
                 });
+                
                 const data = await response.json();
-                if (data.success && data.formatted) document.getElementById('ad-final-textarea').value = data.formatted;
-            } catch (error) { console.error('Error:', error); }
+                if (data.success && data.formatted) {
+                    document.getElementById('ad-final-textarea').value = data.formatted;
+                }
+            } catch (error) {
+                console.error('Format error:', error);
+            }
         }
-
+        
         function adKeepOriginal() {
             if (activeCitationIndex < 0) return;
-            document.getElementById('ad-final-textarea').value = currentCitations[activeCitationIndex].original || '';
+            const cite = currentCitations[activeCitationIndex];
+            document.getElementById('ad-final-textarea').value = cite.original || '';
         }
-
+        
         function adCopyToClipboard() {
             const textarea = document.getElementById('ad-final-textarea');
             navigator.clipboard.writeText(textarea.value);
-            // Visual feedback handled by CSS transition usually, or simple alert/toast
         }
-
+        
         async function adRefreshAlternatives() {
             if (activeCitationIndex < 0) return;
+            
             const cite = currentCitations[activeCitationIndex];
             const container = document.getElementById('ad-alternatives-list');
-            container.innerHTML = `<div class="p-4 text-center"><div class="loader mx-auto"></div></div>`;
+            
+            container.innerHTML = `
+                <div class="alternative-card" style="text-align: center; color: #9ca3af;">
+                    <div class="loader" style="margin: 0 auto 12px;"></div>
+                    <p>Searching databases...</p>
+                </div>
+            `;
             
             try {
                 const response = await fetch('/api/cite/multiple', {
@@ -715,159 +1999,187 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ query: cite.original, style: currentStyle, limit: 5 })
                 });
+                
                 const data = await response.json();
+                
                 if (data.success && data.results?.length > 0) {
                     window.adFreshAlternatives = data.results;
+                    
                     container.innerHTML = data.results.map((r, i) => `
-                        <div onclick="adSelectFreshAlternative(${i})" class="group p-4 bg-white rounded-xl border border-slate-200 hover:border-brand-300 hover:shadow-md cursor-pointer transition-all">
-                             <div class="flex items-center justify-between mb-2">
-                                <span class="badge-${r.type || 'unknown'} text-[10px] font-bold uppercase px-2 py-0.5 rounded">${r.type || 'Unknown'}</span>
-                                <span class="text-[10px] text-slate-400">${r.source || ''}</span>
+                        <div class="alternative-card" onclick="adSelectFreshAlternative(${i})">
+                            <div class="alternative-header">
+                                <span class="type-badge badge-${r.type || 'unknown'}">${(r.type || 'Unknown').toUpperCase()}</span>
+                                <span style="font-size: 0.75rem; color: #9ca3af;">${r.source || ''}</span>
                             </div>
-                            <p class="citation-text text-xs text-slate-700 leading-relaxed">${escapeHtml(r.citation)}</p>
+                            <p style="font-size: 0.9rem; color: #374151;">${escapeHtml(r.citation)}</p>
                         </div>
                     `).join('');
                 } else {
-                    container.innerHTML = `<div class="p-4 text-center text-slate-400 text-xs">No better matches found.</div>`;
+                    container.innerHTML = `
+                        <div class="alternative-card" style="text-align: center; color: #9ca3af;">
+                            <i class="fas fa-search" style="font-size: 1.5rem; margin-bottom: 8px; opacity: 0.3;"></i>
+                            <p>No alternatives found</p>
+                        </div>
+                    `;
                 }
-            } catch (err) { container.innerHTML = `<div class="p-4 text-center text-red-400 text-xs">Search failed.</div>`; }
+            } catch (err) {
+                container.innerHTML = `
+                    <div class="alternative-card" style="text-align: center; color: #ef4444;">
+                        <i class="fas fa-exclamation-circle" style="font-size: 1.5rem; margin-bottom: 8px;"></i>
+                        <p>Search failed</p>
+                    </div>
+                `;
+            }
         }
-
+        
         function adSelectFreshAlternative(idx) {
-            if (window.adFreshAlternatives && window.adFreshAlternatives[idx]) {
+            if (window.adFreshAlternatives?.[idx]) {
                 document.getElementById('ad-final-textarea').value = window.adFreshAlternatives[idx].citation;
             }
         }
-
+        
+        // ========== COMMIT (Author-Date) ==========
         let adSaveInProgress = false;
+        
         async function adCommitChange() {
-            if (activeCitationIndex < 0 || !currentSessionId || adSaveInProgress) return;
+            if (activeCitationIndex < 0 || !currentSessionId) return;
+            if (adSaveInProgress) return;
+            
             adSaveInProgress = true;
             
             const cite = currentCitations[activeCitationIndex];
             const newText = document.getElementById('ad-final-textarea').value;
-            const btn = document.getElementById('ad-commit-btn');
-            const originalContent = btn.innerHTML;
             
-            btn.innerHTML = '<div class="loader border-white border-t-transparent w-4 h-4"></div>';
+            const btn = document.getElementById('ad-commit-btn');
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<div class="loader" style="border-top-color: white;"></div>';
+            btn.disabled = true;
             
             try {
-                const requestBody = { session_id: currentSessionId, reference_id: cite.id || cite.note_id, formatted: newText };
+                const requestBody = {
+                    session_id: currentSessionId,
+                    reference_id: cite.id || cite.note_id,
+                    formatted: newText
+                };
+                
                 if (cite.is_url) {
                     requestBody.is_url = true;
                     requestBody.original_url = cite.original_url || cite.original;
                     requestBody.parenthetical = cite.parenthetical || '';
                 }
+                
                 const response = await fetch('/api/accept-reference', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestBody)
                 });
+                
                 const data = await response.json();
+                
                 if (data.success) {
                     cite.formatted = newText;
                     cite.accepted = true;
-                    document.getElementById('ad-status-badge').textContent = 'Saved ✓';
-                    document.getElementById('ad-status-badge').className = 'text-[10px] font-bold text-green-600 uppercase tracking-wide';
+                    
                     renderCitationList();
                     updateAcceptedCount();
                     updateProgressBadge();
                     
-                    btn.innerHTML = '<i class="fas fa-check"></i> Saved';
-                    btn.classList.add('bg-green-600');
+                    btn.innerHTML = '<i class="fas fa-check"></i> Saved!';
+                    btn.classList.add('success');
+                    
                     setTimeout(() => {
-                        btn.innerHTML = originalContent;
-                        btn.classList.remove('bg-green-600');
+                        btn.innerHTML = originalHtml;
+                        btn.classList.remove('success');
+                        btn.disabled = false;
                         adSaveInProgress = false;
-                        const nextUnaccepted = currentCitations.findIndex((c, i) => i > activeCitationIndex && !c.accepted);
-                        if (currentCitations.every(c => c.accepted)) showSuccessPanel();
-                        else if (nextUnaccepted !== -1) selectCitation(nextUnaccepted);
+                        
+                        if (currentCitations.every(c => c.accepted)) {
+                            showSuccessPanel();
+                        } else {
+                            const next = currentCitations.findIndex((c, i) => i > activeCitationIndex && !c.accepted);
+                            if (next !== -1) selectCitation(next);
+                        }
                     }, 800);
-                } else throw new Error(data.error);
+                } else {
+                    throw new Error(data.error || 'Save failed');
+                }
             } catch (error) {
-                btn.innerHTML = originalContent;
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
                 adSaveInProgress = false;
-                alert('Save failed: ' + error.message);
+                alert('Error: ' + error.message);
             }
         }
-
+        
         function adNavigate(delta) {
             const newIndex = activeCitationIndex + delta;
-            if (newIndex >= 0 && newIndex < currentCitations.length) selectCitation(newIndex);
+            if (newIndex >= 0 && newIndex < currentCitations.length) {
+                selectCitation(newIndex);
+            }
         }
-
-        function updateAcceptedCount() {
-            const accepted = currentCitations.filter(c => c.accepted).length;
-            const el = document.getElementById('accepted-count');
-            if (accepted > 0) {
-                el.textContent = `${accepted} Done`;
-                el.classList.remove('hidden');
-            } else el.classList.add('hidden');
-        }
-
-        function updateProgressBadge() {
-            const accepted = outputType === 'footnote' 
-                ? currentCitations.filter(c => c.success).length 
-                : currentCitations.filter(c => c.accepted).length;
-            document.getElementById('progress-text').textContent = `${accepted}/${currentCitations.length} reviewed`;
-        }
-
-        function showSuccessPanel() {
-            document.getElementById('panel-editor').classList.add('hidden');
-            document.getElementById('panel-footnote-editor').classList.add('hidden');
-            document.getElementById('panel-success').classList.remove('hidden');
-            document.getElementById('download-area').classList.remove('hidden');
-            
-            const changedCount = outputType === 'footnote' ? fnSuccessCount : currentCitations.filter(c => c.accepted).length;
-            document.getElementById('final-total').textContent = currentCitations.length;
-            document.getElementById('final-accepted').textContent = changedCount;
-        }
-
-        /* FOOTNOTE MODE LOGIC */
+        
+        // ========== FOOTNOTE MODE ==========
         let fnActiveIndex = -1;
         let fnSuccessCount = 0;
         let fnJustSaved = false;
         let fnSaveInProgress = false;
-
+        
         function fnRenderCitationList() {
             const container = document.getElementById('citation-list');
-            if (currentCitations.length === 0) return;
+            
+            if (currentCitations.length === 0) {
+                container.innerHTML = `
+                    <div class="citation-list-empty">
+                        <i class="fas fa-inbox"></i>
+                        <p>No citations found</p>
+                    </div>
+                `;
+                return;
+            }
             
             let html = '';
             currentCitations.forEach((cite, idx) => {
                 const isActive = idx === fnActiveIndex;
                 const isSuccess = cite.success === true;
-                let borderClass = isActive ? 'active' : 'border-l-4 border-transparent hover:bg-slate-100';
-                let icon = isSuccess ? '<i class="fas fa-check-circle text-green-500 text-xs"></i>' : '<i class="fas fa-circle text-slate-300 text-[8px]"></i>';
-                let noteId = cite.id || idx + 1;
+                
+                let classes = 'citation-item';
+                if (isActive) classes += ' active';
+                if (isSuccess) classes += ' accepted';
+                
+                const displayText = (cite.text || cite.original || `Note ${idx + 1}`).substring(0, 50);
+                const noteId = cite.id || idx + 1;
                 
                 html += `
-                    <div id="fn-note-${noteId}" onclick="fnLoadEditor(${idx})" 
-                         class="citation-item ${borderClass} p-3 cursor-pointer rounded-r-lg group">
-                        <div class="flex items-center justify-between mb-1">
-                            <span class="text-[10px] font-bold text-slate-400">Note ${noteId}</span>
-                            ${icon}
+                    <div id="fn-note-${noteId}" class="${classes}" onclick="fnLoadEditor(${idx})">
+                        <div class="citation-item-header">
+                            <span class="citation-item-num">Note ${noteId}</span>
+                            ${isSuccess ? '<i class="fas fa-check-circle" style="color: #22c55e;"></i>' : '<i class="fas fa-clock" style="color: #f59e0b;"></i>'}
+                            <span class="type-badge badge-${cite.type || 'unknown'}">${(cite.type || '?').toUpperCase()}</span>
                         </div>
-                        <p class="text-xs text-slate-700 font-medium truncate">${escapeHtml((cite.text || cite.original || '').substring(0,40))}</p>
+                        <p class="citation-item-text">${escapeHtml(displayText)}${displayText.length >= 50 ? '...' : ''}</p>
                     </div>
                 `;
             });
+            
             container.innerHTML = html;
         }
-
+        
         function fnLoadEditor(idx) {
             if (fnSaveInProgress) return;
+            
             fnActiveIndex = idx;
             fnJustSaved = false;
             const cite = currentCitations[idx];
+            const noteId = cite.id || idx + 1;
             
             fnRenderCitationList();
-            document.getElementById('fn-editor-num').textContent = `Note ${cite.id || idx + 1}`;
-            document.getElementById('fn-editor-position').textContent = `${idx + 1} / ${currentCitations.length}`;
             
-            const typeBadge = document.getElementById('fn-type-badge');
-            typeBadge.textContent = (cite.type || 'unknown').toUpperCase();
-            typeBadge.className = `badge-${cite.type || 'unknown'} text-[10px] px-2 py-0.5 rounded font-bold uppercase`;
+            document.getElementById('fn-editor-num').textContent = `Note ${noteId}`;
+            document.getElementById('fn-editor-position').textContent = `${idx + 1} of ${currentCitations.length}`;
+            
+            const typeEl = document.getElementById('fn-type-badge');
+            typeEl.textContent = (cite.type || 'unknown').toUpperCase();
+            typeEl.className = `type-badge badge-${cite.type || 'unknown'}`;
             
             document.getElementById('fn-original-text').textContent = cite.text || cite.original || '';
             document.getElementById('fn-final-textarea').value = cite.formatted || '';
@@ -877,11 +2189,18 @@
             
             fnSearchAlternatives();
         }
-
+        
         async function fnSearchAlternatives() {
             const container = document.getElementById('fn-alternatives-list');
-            container.innerHTML = `<div class="p-6 text-center"><div class="loader mx-auto"></div></div>`;
+            container.innerHTML = `
+                <div class="alternative-card" style="text-align: center; color: #9ca3af;">
+                    <div class="loader" style="margin: 0 auto 12px;"></div>
+                    <p>Searching databases...</p>
+                </div>
+            `;
+            
             const query = document.getElementById('fn-original-text').textContent;
+            if (!query) return;
             
             try {
                 const res = await fetch('/api/cite/multiple', {
@@ -889,46 +2208,72 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ query, style: currentStyle, limit: 5 })
                 });
+                
                 const data = await res.json();
+                
                 if (data.success && data.results?.length > 0) {
                     window.fnAlternatives = data.results;
+                    
                     container.innerHTML = data.results.map((r, i) => `
-                        <div onclick="fnSelectAlternative(${i})" class="group p-4 bg-white rounded-xl border border-slate-200 hover:border-brand-300 hover:shadow-md cursor-pointer transition-all">
-                             <div class="flex items-center justify-between mb-2">
-                                <span class="badge-${r.type || 'unknown'} text-[10px] font-bold uppercase px-2 py-0.5 rounded">${r.type || 'Unknown'}</span>
-                                <span class="text-[10px] text-slate-400">${r.source || ''}</span>
+                        <div class="alternative-card" onclick="fnSelectAlternative(${i})">
+                            <div class="alternative-header">
+                                <span class="type-badge badge-${r.type || 'unknown'}">${(r.type || 'Unknown').toUpperCase()}</span>
+                                <span style="font-size: 0.75rem; color: #9ca3af;">${r.source || ''}</span>
                             </div>
-                            <p class="citation-text text-xs text-slate-700 leading-relaxed">${escapeHtml(r.citation)}</p>
+                            <p style="font-size: 0.9rem; color: #374151;">${escapeHtml(r.citation)}</p>
                         </div>
                     `).join('');
-                } else container.innerHTML = `<div class="p-4 text-center text-slate-400 text-xs">No matches found.</div>`;
-            } catch (err) { container.innerHTML = `<div class="p-4 text-center text-red-400 text-xs">Search failed.</div>`; }
+                } else {
+                    container.innerHTML = `
+                        <div class="alternative-card" style="text-align: center; color: #9ca3af;">
+                            <i class="fas fa-search" style="font-size: 1.5rem; margin-bottom: 8px; opacity: 0.3;"></i>
+                            <p>No alternatives found</p>
+                        </div>
+                    `;
+                }
+            } catch (err) {
+                container.innerHTML = `
+                    <div class="alternative-card" style="text-align: center; color: #ef4444;">
+                        <i class="fas fa-exclamation-circle" style="font-size: 1.5rem; margin-bottom: 8px;"></i>
+                        <p>Search failed</p>
+                    </div>
+                `;
+            }
         }
-
+        
         function fnSelectAlternative(idx) {
-            if (window.fnAlternatives && window.fnAlternatives[idx]) {
+            if (window.fnAlternatives?.[idx]) {
                 document.getElementById('fn-final-textarea').value = window.fnAlternatives[idx].citation;
             }
         }
-
+        
         async function fnCommitChange(silent = false) {
-            if (fnActiveIndex < 0 || !currentSessionId || fnSaveInProgress) return;
+            if (fnActiveIndex < 0 || !currentSessionId) return;
+            if (fnSaveInProgress) return;
+            
             fnSaveInProgress = true;
             
             const cite = currentCitations[fnActiveIndex];
+            const noteId = cite.id || fnActiveIndex + 1;
             const newText = document.getElementById('fn-final-textarea').value;
+            
             const btn = document.getElementById('fn-commit-btn');
             const originalHtml = btn.innerHTML;
             
-            if (!silent) btn.innerHTML = '<div class="loader border-white border-t-transparent w-4 h-4"></div>';
+            if (!silent) {
+                btn.innerHTML = '<div class="loader" style="border-top-color: white;"></div>';
+                btn.disabled = true;
+            }
             
             try {
                 const res = await fetch('/api/update', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: currentSessionId, note_id: cite.id || fnActiveIndex + 1, html: newText })
+                    body: JSON.stringify({ session_id: currentSessionId, note_id: noteId, html: newText })
                 });
+                
                 const data = await res.json();
+                
                 if (data.success) {
                     currentCitations[fnActiveIndex].formatted = newText;
                     if (!currentCitations[fnActiveIndex].success) fnSuccessCount++;
@@ -941,131 +2286,220 @@
                     fnUpdateProgressBadge();
                     
                     if (!silent) {
-                        btn.innerHTML = '<i class="fas fa-check"></i> Saved';
-                        btn.classList.add('bg-green-600');
+                        btn.innerHTML = '<i class="fas fa-check"></i> Saved!';
+                        btn.classList.add('success');
+                        
                         setTimeout(() => {
                             btn.innerHTML = originalHtml;
-                            btn.classList.remove('bg-green-600');
+                            btn.classList.remove('success');
+                            btn.disabled = false;
                             fnSaveInProgress = false;
-                            if (fnActiveIndex < currentCitations.length - 1) fnNavigate(1);
-                            else if (currentCitations.every(c => c.success)) showSuccessPanel();
+                            
+                            if (fnActiveIndex < currentCitations.length - 1) {
+                                fnNavigate(1);
+                            } else if (currentCitations.every(c => c.success)) {
+                                showFnSuccess();
+                            }
                         }, 800);
                     }
-                } else { throw new Error(data.error); }
+                } else {
+                    if (!silent) {
+                        btn.innerHTML = originalHtml;
+                        btn.disabled = false;
+                        alert('Failed to save');
+                    }
+                    fnSaveInProgress = false;
+                }
             } catch (err) {
                 fnSaveInProgress = false;
                 if (!silent) {
                     btn.innerHTML = originalHtml;
-                    alert('Failed to save changes');
+                    btn.disabled = false;
+                    alert('Failed to save');
                 }
             }
         }
-
+        
         async function fnNavigate(delta) {
-            if (fnJustSaved) fnJustSaved = false;
-            else {
+            if (fnJustSaved) {
+                fnJustSaved = false;
+            } else {
                 const textarea = document.getElementById('fn-final-textarea');
-                if (fnActiveIndex >= 0 && textarea && textarea.value.trim()) await fnCommitChange(true);
+                if (fnActiveIndex >= 0 && textarea?.value.trim()) {
+                    await fnCommitChange(true);
+                }
             }
+            
             const newIdx = fnActiveIndex + delta;
-            if (newIdx >= 0 && newIdx < currentCitations.length) fnLoadEditor(newIdx);
+            if (newIdx >= 0 && newIdx < currentCitations.length) {
+                fnLoadEditor(newIdx);
+            }
         }
-
+        
         function fnCopyToClipboard() {
-            const textarea = document.getElementById('fn-final-textarea');
-            navigator.clipboard.writeText(textarea.value);
+            navigator.clipboard.writeText(document.getElementById('fn-final-textarea').value);
         }
-
+        
         function fnAppendMode() {
             const textarea = document.getElementById('fn-final-textarea');
             textarea.value = textarea.value.trim() + '; ';
             textarea.focus();
         }
-
-        function backToReview() {
-            document.getElementById('panel-success').classList.add('hidden');
-            if (outputType === 'footnote') {
-                document.getElementById('panel-footnote-editor').classList.remove('hidden');
-                fnLoadEditor(0);
+        
+        function fnUpdateProgressBadge() {
+            const accepted = currentCitations.filter(c => c.success).length;
+            document.getElementById('header-progress-text').textContent = `${accepted}/${currentCitations.length} reviewed`;
+        }
+        
+        function showFnSuccess() {
+            document.getElementById('panel-footnote-editor').style.display = 'none';
+            document.getElementById('panel-success').classList.add('active');
+            document.getElementById('final-total').textContent = currentCitations.length;
+            document.getElementById('final-accepted').textContent = fnSuccessCount;
+        }
+        
+        // ========== SHARED FUNCTIONS ==========
+        function updateAcceptedCount() {
+            const accepted = currentCitations.filter(c => c.accepted).length;
+            const el = document.getElementById('accepted-count');
+            if (accepted > 0) {
+                el.textContent = `${accepted} accepted`;
+                el.style.display = 'inline';
             } else {
-                document.getElementById('panel-editor').classList.remove('hidden');
+                el.style.display = 'none';
             }
         }
-
+        
+        function updateProgressBadge() {
+            const accepted = currentCitations.filter(c => c.accepted).length;
+            document.getElementById('header-progress-text').textContent = `${accepted}/${currentCitations.length} reviewed`;
+        }
+        
+        function showSuccessPanel() {
+            document.getElementById('panel-editor').style.display = 'none';
+            document.getElementById('panel-success').classList.add('active');
+            document.getElementById('download-area').classList.add('show');
+            
+            const changed = currentCitations.filter(c => c.accepted && c.formatted && c.formatted !== c.original).length;
+            document.getElementById('final-total').textContent = currentCitations.length;
+            document.getElementById('final-accepted').textContent = changed;
+        }
+        
+        function backToReview() {
+            document.getElementById('panel-success').classList.remove('active');
+            if (outputType === 'author-date') {
+                document.getElementById('panel-editor').style.display = 'flex';
+                selectCitation(0);
+            } else {
+                document.getElementById('panel-footnote-editor').style.display = 'flex';
+                fnLoadEditor(0);
+            }
+        }
+        
         async function downloadDocument() {
-            if (!currentSessionId) return;
+            if (!currentSessionId) return alert('No document to download');
+            
             try {
                 if (outputType === 'author-date') {
-                    await fetch('/api/finalize-author-date', {
+                    const res = await fetch('/api/finalize-author-date', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ session_id: currentSessionId, references: [] })
                     });
+                    const data = await res.json();
+                    if (!data.success) throw new Error(data.error || 'Finalize failed');
                 }
+                
                 const response = await fetch(`/api/download/${currentSessionId}`);
                 if (!response.ok) throw new Error('Download failed');
+                
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `citategenie_processed.docx`;
+                a.download = 'citategenie_processed.docx';
                 document.body.appendChild(a);
                 a.click();
+                window.URL.revokeObjectURL(url);
                 a.remove();
-            } catch (error) { alert('Error: ' + error.message); }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
         }
-
+        
         async function exportMetadataCSV() {
-            if (!currentSessionId) return;
+            if (!currentSessionId) return alert('No document to export');
+            
             try {
                 const response = await fetch(`/api/export-metadata/${currentSessionId}`);
+                if (!response.ok) throw new Error('Export failed');
+                
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `citategenie_citations.csv`;
+                a.download = 'citategenie_citations.csv';
                 document.body.appendChild(a);
                 a.click();
+                window.URL.revokeObjectURL(url);
                 a.remove();
-            } catch (error) { alert('Error exporting: ' + error.message); }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
         }
-
+        
         function resetDocument() {
             currentSessionId = null;
             currentCitations = [];
             activeCitationIndex = -1;
-            selectedOptionIndex = 0;
             fnActiveIndex = -1;
             fnSuccessCount = 0;
             fnJustSaved = false;
             fnSaveInProgress = false;
             adSaveInProgress = false;
             
+            // Reset landing page
             document.getElementById('file-input').value = '';
-            document.getElementById('file-info').classList.add('hidden');
-            document.getElementById('download-area').classList.add('hidden');
-            document.getElementById('upload-controls').classList.remove('hidden');
-            document.getElementById('upload-loading').classList.add('hidden');
-            document.getElementById('output-type-badge').classList.add('hidden');
-            document.getElementById('progress-badge').classList.add('hidden');
-            document.getElementById('accepted-count').classList.add('hidden');
-            document.getElementById('citation-count').textContent = '0';
+            document.getElementById('file-selected').classList.remove('show');
+            document.getElementById('drop-zone').style.display = 'block';
+            document.getElementById('process-btn').disabled = true;
+            document.getElementById('progress-container').classList.remove('active');
             
-            document.getElementById('panel-empty').classList.remove('hidden');
-            document.getElementById('panel-editor').classList.add('hidden');
-            document.getElementById('panel-footnote-editor').classList.add('hidden');
-            document.getElementById('panel-success').classList.add('hidden');
+            // Switch views
+            document.getElementById('landing-page').classList.remove('hidden');
+            document.getElementById('workbench').classList.remove('active');
             
-            document.getElementById('citation-list').innerHTML = `<div id="list-empty" class="h-full flex flex-col items-center justify-center text-center p-8 opacity-40"><i class="fas fa-arrow-up text-4xl mb-4 text-slate-300"></i><p class="text-sm font-medium text-slate-600">Upload to begin</p></div>`;
+            // Reset workbench
+            document.getElementById('panel-empty').style.display = 'flex';
+            document.getElementById('panel-editor').style.display = 'none';
+            document.getElementById('panel-footnote-editor').style.display = 'none';
+            document.getElementById('panel-success').classList.remove('active');
+            document.getElementById('download-area').classList.remove('show');
+            document.getElementById('accepted-count').style.display = 'none';
+            
+            document.getElementById('citation-list').innerHTML = `
+                <div class="citation-list-empty">
+                    <i class="fas fa-inbox"></i>
+                    <p>Citations will appear here</p>
+                </div>
+            `;
         }
         
-        function showProcessingOverlay() { document.getElementById('processing-overlay').classList.remove('hidden'); }
-        function hideProcessingOverlay() { document.getElementById('processing-overlay').classList.add('hidden'); }
+        // ========== OVERLAY ==========
+        function showProcessingOverlay() {
+            document.getElementById('processing-overlay').classList.add('active');
+        }
+        
+        function hideProcessingOverlay() {
+            document.getElementById('processing-overlay').classList.remove('active');
+        }
+        
         function updateProcessingStatus(message, progress) {
             document.getElementById('processing-step').textContent = message;
             document.getElementById('processing-progress').style.width = `${progress}%`;
         }
         
+        // ========== UTILITIES ==========
         function escapeHtml(text) {
             if (!text) return '';
             const div = document.createElement('div');

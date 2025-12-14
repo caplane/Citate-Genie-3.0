@@ -30,9 +30,76 @@ from pathlib import Path
 # =============================================================================
 # EMAIL CONFIGURATION
 # =============================================================================
-# Set to True to send email after every API call (test mode)
-# Set to False for production (or use environment variable)
-EMAIL_AFTER_EVERY_CALL = os.environ.get('EMAIL_AFTER_EVERY_CALL', 'true').lower() == 'true'
+# Set to True to send email after each document is processed
+# Set to False to disable auto-emails
+EMAIL_AFTER_DOCUMENT = os.environ.get('EMAIL_AFTER_DOCUMENT', 'true').lower() == 'true'
+
+# =============================================================================
+# PER-DOCUMENT COST TRACKING
+# =============================================================================
+# Track costs for the current document being processed
+_current_document_cost = 0.0
+_current_document_calls = 0
+_current_document_name = ""
+
+
+def start_document_tracking(document_name: str = ""):
+    """
+    Reset cost tracking for a new document.
+    Call this at the start of document processing.
+    """
+    global _current_document_cost, _current_document_calls, _current_document_name
+    _current_document_cost = 0.0
+    _current_document_calls = 0
+    _current_document_name = document_name
+    print(f"[CostTracker] Started tracking costs for: {document_name or 'document'}")
+
+
+def get_document_cost() -> dict:
+    """
+    Get the cost for the current document.
+    """
+    return {
+        'cost': _current_document_cost,
+        'calls': _current_document_calls,
+        'document': _current_document_name,
+    }
+
+
+def finish_document_tracking() -> dict:
+    """
+    Finish tracking and optionally send email.
+    Call this at the end of document processing.
+    
+    Returns:
+        Dict with document cost summary
+    """
+    global _current_document_cost, _current_document_calls, _current_document_name
+    
+    summary = {
+        'cost': _current_document_cost,
+        'calls': _current_document_calls,
+        'document': _current_document_name,
+    }
+    
+    print(f"[CostTracker] Document '{_current_document_name}' complete: {_current_document_calls} API calls, ${_current_document_cost:.4f}")
+    
+    # Send email if enabled
+    if EMAIL_AFTER_DOCUMENT and _current_document_calls > 0:
+        try:
+            from email_service import send_document_cost_report
+            send_document_cost_report(summary)
+            print(f"[CostTracker] Document cost email sent")
+        except Exception as e:
+            print(f"[CostTracker] Document cost email failed: {e}")
+    
+    # Reset for next document
+    _current_document_cost = 0.0
+    _current_document_calls = 0
+    _current_document_name = ""
+    
+    return summary
+
 
 # =============================================================================
 # PRICING (per 1M tokens, updated Dec 2024)
@@ -170,16 +237,11 @@ def log_api_call(
         print(f"[CostTracker] {provider}: {input_tokens} in + {output_tokens} out = ${cost:.6f}")
     
     # ==========================================================================
-    # AUTO-EMAIL: Send cost report after each API call (test mode)
-    # Change EMAIL_AFTER_EVERY_CALL to False for production
+    # Accumulate cost for current document
     # ==========================================================================
-    if EMAIL_AFTER_EVERY_CALL:
-        try:
-            from email_service import send_cost_report
-            send_cost_report()
-            print(f"[CostTracker] Auto-email sent after API call")
-        except Exception as e:
-            print(f"[CostTracker] Auto-email failed: {e}")
+    global _current_document_cost, _current_document_calls
+    _current_document_cost += cost
+    _current_document_calls += 1
     
     return cost
 

@@ -270,6 +270,54 @@ def send_cost_report(to_email: str = None) -> bool:
     )
 
 
+def send_document_cost_report(doc_summary: dict, to_email: str = None) -> bool:
+    """
+    Send a cost report for a single document transformation.
+    
+    Args:
+        doc_summary: Dict with 'cost', 'calls', 'document' keys
+        to_email: Override recipient (defaults to ADMIN_EMAIL)
+        
+    Returns:
+        True if sent successfully, False otherwise
+    """
+    recipient = to_email or ADMIN_EMAIL
+    
+    if not recipient:
+        print("[EmailService] ERROR: No recipient email configured")
+        return False
+    
+    now = datetime.now().strftime('%B %d, %Y at %I:%M %p')
+    
+    body = f"""CitateGenie Document Cost Report
+{'=' * 40}
+
+Report generated: {now}
+
+DOCUMENT
+{'-' * 40}
+Filename: {doc_summary.get('document', 'Unknown')}
+
+COST SUMMARY
+{'-' * 40}
+API calls: {doc_summary.get('calls', 0)}
+Total cost: ${doc_summary.get('cost', 0):.4f}
+
+{'=' * 40}
+
+--
+CitateGenie Cost Tracker
+"""
+    
+    subject = f"CitateGenie Doc Cost: ${doc_summary.get('cost', 0):.4f} ({doc_summary.get('calls', 0)} calls)"
+    
+    return send_email(
+        to=recipient,
+        subject=subject,
+        body=body,
+    )
+
+
 # =============================================================================
 # TESTING
 # =============================================================================

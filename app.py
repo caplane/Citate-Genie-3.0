@@ -695,6 +695,10 @@ def process_doc():
                 'error': 'Only .docx files are supported'
             }), 400
         
+        # Start tracking costs for this document
+        from cost_tracker import start_document_tracking
+        start_document_tracking(file.filename)
+        
         style = request.form.get('style', 'Chicago Manual of Style')
         add_links = request.form.get('add_links', 'true').lower() == 'true'
         
@@ -751,6 +755,10 @@ def process_doc():
         # Return summary with notes for workbench UI
         success_count = sum(1 for r in results if r.success)
         
+        # Finish tracking costs and send email
+        from cost_tracker import finish_document_tracking
+        doc_cost_summary = finish_document_tracking()
+        
         return jsonify({
             'success': True,
             'session_id': session_id,
@@ -762,7 +770,8 @@ def process_doc():
                 'ibid': sum(1 for r in results if r.citation_form == 'ibid'),
                 'short': sum(1 for r in results if r.citation_form == 'short'),
                 'full': sum(1 for r in results if r.citation_form == 'full'),
-            }
+            },
+            'cost': doc_cost_summary,  # Include cost info in response
         })
         
     except Exception as e:

@@ -7,17 +7,7 @@ Analyzes text patterns to determine the type of citation.
 
 import re
 from typing import Optional, Dict, Any
-from dataclasses import dataclass, field
-from models import CitationType
-
-
-@dataclass
-class DetectionResult:
-    """Result from the detection layer."""
-    citation_type: CitationType
-    confidence: float = 1.0
-    cleaned_query: str = ""  # Cleaned/normalized version of input for searching
-    hints: Dict[str, Any] = field(default_factory=dict)  # Type-specific hints for extractors
+from models import CitationType, DetectionResult
 
 
 # URL detection patterns

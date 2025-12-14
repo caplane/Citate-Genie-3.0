@@ -1054,7 +1054,7 @@ def _route_url(url: str) -> Optional[CitationMetadata]:
 # MAIN ROUTING FUNCTION
 # =============================================================================
 
-def route_citation(query: str, style: str = "chicago", context: str = "") -> Tuple[Optional[CitationMetadata], str]:
+def route_citation(query: str, style: str = "chicago", context: str = "", metadata_cache=None) -> Tuple[Optional[CitationMetadata], str]:
     """
     Main entry point: route query to appropriate engine and format result.
     
@@ -1064,11 +1064,15 @@ def route_citation(query: str, style: str = "chicago", context: str = "") -> Tup
         query: The citation text to process
         style: Citation style to use for formatting
         context: Optional document context/gist to improve AI classification
+        metadata_cache: Optional CitationMetadataCache for embedded document cache
     
     NEW (V3.4): Tries to parse already-formatted citations first.
     If the citation is complete (has author, title, journal/publisher, year),
     it reformats without searching databases. This preserves authoritative
     content while applying consistent style formatting.
+    
+    NEW (V4.1): Checks metadata_cache before any API calls. If citation is found
+    in cache, returns cached metadata immediately (skips all lookups).
     """
     query = query.strip()
     if not query:
@@ -1077,23 +1081,40 @@ def route_citation(query: str, style: str = "chicago", context: str = "") -> Tup
     formatter = get_formatter(style)
     metadata = None
     
+    # CHECK CACHE FIRST (new V4.1)
+    # If we have cached metadata for this exact citation text, use it
+    if metadata_cache is not None:
+        cached_metadata = metadata_cache.get(query)
+        if cached_metadata:
+            print(f"[UnifiedRouter] Using cached metadata for: {query[:40]}...")
+            return cached_metadata, formatter.format(cached_metadata)
+    
     # 0. TRY PARSING FIRST: If citation is already complete, just reformat
     # This preserves user's authoritative content while applying style
     parsed = parse_existing_citation(query)
     if parsed and _is_citation_complete(parsed):
         print(f"[UnifiedRouter] Parsed complete citation: {parsed.citation_type.name}")
+        # Store in cache if available
+        if metadata_cache is not None:
+            metadata_cache.set(query, parsed)
         return parsed, formatter.format(parsed)
     
     # 1. Check for legal citation FIRST (superlegal.py handles famous cases)
     if superlegal.is_legal_citation(query):
         metadata = _route_legal(query)
         if metadata:
+            # Store in cache if available (V4.1)
+            if metadata_cache is not None:
+                metadata_cache.set(query, metadata)
             return metadata, formatter.format(metadata)
     
     # 2. Check for URL
     if is_url(query):
         metadata = _route_url(query)
         if metadata:
+            # Store in cache if available (V4.1)
+            if metadata_cache is not None:
+                metadata_cache.set(query, metadata)
             return metadata, formatter.format(metadata)
     
     # 3. Detect type using standard detectors
@@ -1154,6 +1175,9 @@ def route_citation(query: str, style: str = "chicago", context: str = "") -> Tup
     
     # Format and return
     if metadata:
+        # Store in cache if available (new V4.1)
+        if metadata_cache is not None:
+            metadata_cache.set(query, metadata)
         return metadata, formatter.format(metadata)
     
     return None, ""
@@ -1760,9 +1784,9 @@ def get_parenthetical_metadata(
 # =============================================================================
 
 # Alias for app.py compatibility
-def get_citation(query: str, style: str = "chicago", context: str = "") -> Tuple[Optional[CitationMetadata], str]:
+def get_citation(query: str, style: str = "chicago", context: str = "", metadata_cache=None) -> Tuple[Optional[CitationMetadata], str]:
     """Alias for route_citation() - backward compatibility."""
-    return route_citation(query, style, context)
+    return route_citation(query, style, context, metadata_cache)
 
 
 def search_citation(query: str) -> List[dict]:

@@ -53,6 +53,7 @@ from unified_router import get_citation, get_multiple_citations, get_parenthetic
 from formatters.base import get_formatter
 from document_processor import process_document
 from audit_log import audit, AuditEvent
+from encryption import get_encryptor
 from processors.topic_extractor import get_document_context
 from processors.document_metadata import export_cache_to_csv
 
@@ -126,7 +127,7 @@ class SessionManager:
         return self._storage_dir / f"{session_id}.pkl"
     
     def _save_session(self, session_id: str):
-        """Save a single session to disk with file locking."""
+        """Save a single session to disk with encryption and file locking."""
         if not self._persistence_available:
             return
         try:
@@ -134,15 +135,18 @@ class SessionManager:
             session = self._sessions.get(session_id)
             if session:
                 session_file = self._get_session_file(session_id)
-                # Write to temp file first, then rename (atomic on POSIX)
                 temp_file = session_file.with_suffix('.tmp')
+                
+                # Serialize then encrypt
+                raw_bytes = pickle.dumps(session)
+                encrypted_bytes = get_encryptor().encrypt(session_id, raw_bytes)
+                
                 with open(temp_file, 'wb') as f:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # Exclusive lock
-                    pickle.dump(session, f)
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                    f.write(encrypted_bytes)
                     f.flush()
-                    os.fsync(f.fileno())  # Force write to disk
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # Unlock
-                # Atomic rename
+                    os.fsync(f.fileno())
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
                 temp_file.rename(session_file)
         except Exception as e:
             print(f"[SessionManager] Failed to save session {session_id[:8]}: {e}")
@@ -159,19 +163,33 @@ class SessionManager:
             print(f"[SessionManager] Failed to delete session file {session_id[:8]}: {e}")
     
     def _load_sessions(self):
-        """Load all sessions from disk on startup."""
+        """Load all sessions from disk on startup (with decryption)."""
         if not self._persistence_available:
             return
         
         loaded = 0
         expired = 0
+        failed = 0
         current_time = datetime.now()
         
         try:
             for session_file in self._storage_dir.glob("*.pkl"):
                 try:
+                    session_id = session_file.stem
+                    
                     with open(session_file, 'rb') as f:
-                        session = pickle.load(f)
+                        encrypted_bytes = f.read()
+                    
+                    # Decrypt then deserialize
+                    decrypted_bytes = get_encryptor().decrypt(session_id, encrypted_bytes)
+                    
+                    if decrypted_bytes is None:
+                        print(f"[SessionManager] Could not decrypt {session_file.name}, removing")
+                        session_file.unlink()
+                        failed += 1
+                        continue
+                    
+                    session = pickle.loads(decrypted_bytes)
                     
                     # Check if expired
                     if current_time > session.get('expires_at', current_time):
@@ -179,19 +197,18 @@ class SessionManager:
                         expired += 1
                         continue
                     
-                    session_id = session_file.stem
                     self._sessions[session_id] = session
                     loaded += 1
                 except Exception as e:
                     print(f"[SessionManager] Failed to load {session_file.name}: {e}")
-                    # Remove corrupted file
                     try:
                         session_file.unlink()
                     except:
                         pass
+                    failed += 1
             
-            if loaded > 0 or expired > 0:
-                print(f"[SessionManager] Loaded {loaded} sessions, cleaned {expired} expired")
+            if loaded > 0 or expired > 0 or failed > 0:
+                print(f"[SessionManager] Loaded {loaded} sessions, {expired} expired, {failed} failed")
         except Exception as e:
             print(f"[SessionManager] Failed to load sessions: {e}")
     
@@ -227,9 +244,12 @@ class SessionManager:
                 if session_file.exists():
                     try:
                         with open(session_file, 'rb') as f:
-                            session = pickle.load(f)
-                        self._sessions[session_id] = session
-                        print(f"[SessionManager] Recovered session {session_id[:8]} from disk")
+                            encrypted_bytes = f.read()
+                        decrypted_bytes = get_encryptor().decrypt(session_id, encrypted_bytes)
+                        if decrypted_bytes:
+                            session = pickle.loads(decrypted_bytes)
+                            self._sessions[session_id] = session
+                            print(f"[SessionManager] Recovered session {session_id[:8]} from disk")
                     except Exception as e:
                         print(f"[SessionManager] Failed to recover session {session_id[:8]}: {e}")
             
@@ -255,9 +275,12 @@ class SessionManager:
                 if session_file.exists():
                     try:
                         with open(session_file, 'rb') as f:
-                            session = pickle.load(f)
-                        self._sessions[session_id] = session
-                        print(f"[SessionManager] Recovered session {session_id[:8]} from disk for set()")
+                            encrypted_bytes = f.read()
+                        decrypted_bytes = get_encryptor().decrypt(session_id, encrypted_bytes)
+                        if decrypted_bytes:
+                            session = pickle.loads(decrypted_bytes)
+                            self._sessions[session_id] = session
+                            print(f"[SessionManager] Recovered session {session_id[:8]} from disk for set()")
                     except Exception as e:
                         print(f"[SessionManager] Failed to recover session {session_id[:8]}: {e}")
             

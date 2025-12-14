@@ -1,0 +1,1631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CitateGenie - Citation Workbench</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /*
+         * CitateGenie - Unified Citation Workbench
+         * Version: 3.1.0
+         * Updated: 2025-12-12
+         * 
+         * V3.1.0 Changes:
+         * - FULL user-in-the-loop review for author-date mode
+         * - Citation list with status indicators
+         * - Options panel for selecting alternatives
+         * - Accept & Save / Next workflow
+         * - Proper finalize → download flow
+         */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300;1,400&display=swap');
+        
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .serif { font-family: 'Merriweather', serif; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .loader {
+            border: 3px solid #e2e8f0;
+            border-radius: 50%;
+            border-top: 3px solid #2563eb;
+            width: 20px;
+            height: 20px;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Citation type badges */
+        .badge-legal { background: #fef3c7; color: #92400e; }
+        .badge-journal { background: #d1fae5; color: #065f46; }
+        .badge-book { background: #dbeafe; color: #1e40af; }
+        .badge-medical { background: #fce7f3; color: #9d174d; }
+        .badge-url { background: #e0f2fe; color: #0369a1; }
+        .badge-newspaper { background: #fef9c3; color: #854d0e; }
+        .badge-government { background: #f3e8ff; color: #7c3aed; }
+        .badge-unknown { background: #f1f5f9; color: #475569; }
+        
+        /* Status indicators */
+        .status-success { border-left: 3px solid #22c55e; }
+        .status-pending { border-left: 3px solid #f59e0b; }
+        .status-active { border-left: 3px solid #3b82f6; background: #eff6ff; }
+        
+        /* Style groups */
+        .style-group-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 8px 12px 4px;
+            background: #f8fafc;
+        }
+        
+        /* Output type indicator */
+        .output-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-weight: 500;
+        }
+        .output-footnote { background: #dbeafe; color: #1e40af; }
+        .output-author-date { background: #d1fae5; color: #047857; }
+        
+        /* Citation item in list */
+        .citation-item {
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            background: white;
+            margin-bottom: 6px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .citation-item:hover { border-color: #94a3b8; }
+        .citation-item.accepted { border-left: 3px solid #22c55e; background: #f0fdf4; }
+        .citation-item.active { border-color: #3b82f6; background: #eff6ff; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
+        .citation-item.pending { border-left: 3px solid #f59e0b; }
+        
+        /* Option card */
+        .option-card {
+            padding: 12px 16px;
+            border-radius: 10px;
+            border: 2px solid #e2e8f0;
+            background: white;
+            margin-bottom: 10px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .option-card:hover { border-color: #3b82f6; background: #f8fafc; }
+        .option-card.selected { border-color: #3b82f6; background: #eff6ff; }
+        .option-card.original { border-style: dashed; background: #fafafa; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 shadow-sm z-20 px-6 h-16 flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center gap-4">
+            <div class="bg-gradient-to-br from-blue-600 to-indigo-600 text-white w-10 h-10 flex items-center justify-center rounded-lg shadow-sm">
+                <i class="fas fa-quote-left text-lg"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold text-gray-900 tracking-tight">CitateGenie</h1>
+                <p class="text-xs text-gray-500 font-medium">Citation Workbench <span class="text-blue-600">v3.1</span></p>
+            </div>
+        </div>
+        
+        <div class="flex items-center gap-3">
+            <div id="output-type-badge" class="hidden output-indicator output-footnote">
+                <i class="fas fa-superscript"></i>
+                <span>Footnotes</span>
+            </div>
+            <div id="progress-badge" class="hidden text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium">
+                <span id="progress-text">0/0 reviewed</span>
+            </div>
+            <button onclick="resetDocument()" class="text-gray-500 hover:text-gray-700 font-medium text-sm px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+                <i class="fas fa-redo mr-1"></i> Reset
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- Left Sidebar: Upload & Citation List -->
+        <aside class="w-80 lg:w-96 bg-white border-r border-gray-200 flex flex-col z-10 flex-shrink-0">
+            
+            <!-- Upload Area -->
+            <div class="p-4 border-b border-gray-100 bg-gradient-to-b from-gray-50 to-white">
+                <input type="file" id="file-input" class="hidden" accept=".docx">
+                <button onclick="document.getElementById('file-input').click()" id="upload-btn" class="w-full border-2 border-dashed border-gray-300 rounded-xl p-5 text-center hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer group flex flex-col items-center gap-2">
+                    <i class="fas fa-cloud-upload-alt text-2xl text-gray-400 group-hover:text-blue-500 transition-colors"></i>
+                    <span class="text-sm font-medium text-gray-600 group-hover:text-blue-700">Upload Document (.docx)</span>
+                    <span class="text-xs text-gray-400">Style determines output format</span>
+                </button>
+                
+                <!-- Style Selector -->
+                <div class="mt-3">
+                    <label for="style-selector" class="text-xs font-medium text-gray-600 mb-1 block">Citation Style:</label>
+                    <select id="style-selector" onchange="updateStyleInfo()" class="w-full text-sm border border-gray-300 rounded-lg bg-white text-gray-700 h-10 px-3 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none cursor-pointer">
+                        <optgroup label="📝 Footnote/Endnote Styles">
+                            <option value="Chicago Manual of Style">Chicago Notes-Bib (17th)</option>
+                            <option value="Bluebook">Bluebook (US Legal)</option>
+                            <option value="OSCOLA">OSCOLA (UK Legal)</option>
+                        </optgroup>
+                        <optgroup label="📖 Author-Date Styles">
+                            <option value="APA 7">APA 7th Edition</option>
+                            <option value="MLA 9">MLA 9th Edition</option>
+                            <option value="Chicago Author-Date">Chicago Author-Date</option>
+                            <option value="Harvard">Harvard</option>
+                        </optgroup>
+                    </select>
+                    <div id="style-info" class="mt-2 text-xs text-gray-500 flex items-center gap-2">
+                        <span id="style-output-type" class="output-indicator output-footnote">
+                            <i class="fas fa-superscript"></i> Footnotes
+                        </span>
+                        <span id="style-bib-title" class="text-gray-400">→ Bibliography</span>
+                    </div>
+                </div>
+                
+                <div id="upload-loading" class="hidden mt-3 flex items-center justify-center gap-2 text-xs text-gray-500">
+                    <div class="loader w-4 h-4"></div> <span>Processing document...</span>
+                </div>
+                
+                <div id="file-info" class="hidden mt-3 flex items-center justify-between bg-blue-50 px-3 py-2 rounded-lg">
+                    <span class="text-sm text-blue-700 font-medium truncate" id="file-name-display"></span>
+                    <button onclick="resetDocument()" class="text-blue-600 hover:text-blue-800 text-xs">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <!-- Download Button (shown after all reviewed) -->
+                <div id="download-area" class="hidden mt-3">
+                    <button onclick="downloadDocument()" class="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-medium py-2.5 px-4 rounded-lg transition-all text-sm shadow-sm flex items-center justify-center gap-2">
+                        <i class="fas fa-file-download"></i> Download Processed Document
+                    </button>
+                </div>
+            </div>
+
+            <!-- Stats Bar -->
+            <div class="px-4 py-2 bg-white border-b border-gray-100 flex justify-between items-center">
+                <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Citations</span>
+                <div class="flex items-center gap-2">
+                    <span id="accepted-count" class="hidden text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">0 accepted</span>
+                    <span id="citation-count" class="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 font-medium">0 total</span>
+                </div>
+            </div>
+
+            <!-- Citation List -->
+            <div id="citation-list" class="flex-1 overflow-y-auto p-3">
+                <div id="list-empty" class="text-center py-12 text-gray-400">
+                    <i class="fas fa-inbox text-4xl mb-3 opacity-30"></i>
+                    <p class="text-sm font-medium">Upload a document to begin</p>
+                    <p class="text-xs mt-1 text-gray-300">Citations will appear here for review</p>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Right Panel: Editor / Options -->
+        <section class="flex-1 flex flex-col bg-gray-50 overflow-hidden">
+            
+            <!-- Empty State (before upload) -->
+            <div id="panel-empty" class="flex-1 flex items-center justify-center">
+                <div class="text-center max-w-md mx-auto p-8">
+                    <div class="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                        <i class="fas fa-file-alt text-3xl text-blue-500"></i>
+                    </div>
+                    <h2 class="text-xl font-bold text-gray-700 mb-2">Upload a Document</h2>
+                    <p class="text-gray-500 text-sm mb-6">
+                        CitateGenie will extract citations and help you format them correctly.
+                    </p>
+                    <div class="bg-white rounded-xl p-4 border border-gray-200 text-left">
+                        <p class="text-xs font-semibold text-gray-600 mb-2">How it works:</p>
+                        <ol class="text-xs text-gray-500 space-y-2">
+                            <li class="flex items-start gap-2">
+                                <span class="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold">1</span>
+                                <span>Select your citation style (APA, Chicago, etc.)</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold">2</span>
+                                <span>Upload your .docx document</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold">3</span>
+                                <span>Review each citation and select the best match</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="bg-blue-100 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold">4</span>
+                                <span>Download your formatted document</span>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Editor Panel (shown during review) -->
+            <!-- Author-Date Editor Panel (matching footnote UX) -->
+            <div id="panel-editor" class="hidden flex-1 flex flex-col overflow-hidden">
+                
+                <!-- Editor Header -->
+                <div class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <span id="editor-citation-num" class="text-xs font-bold text-white bg-green-600 px-2.5 py-1 rounded-full">#1</span>
+                        <div>
+                            <h3 class="font-semibold text-gray-800">Resolve Citation</h3>
+                            <p class="text-xs text-gray-500">Edit or select an alternative below</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span id="ad-type-badge" class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-gray-100 text-gray-600">UNKNOWN</span>
+                        <button onclick="adNavigate(-1)" id="btn-prev" class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed" disabled>
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <span id="editor-position" class="text-xs text-gray-500 min-w-[60px] text-center">1 of 5</span>
+                        <button onclick="adNavigate(1)" id="btn-next" class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Scrollable Content -->
+                <div class="flex-1 overflow-y-auto p-6">
+                    <div class="max-w-3xl mx-auto space-y-6">
+                        
+                        <!-- Original Citation Card -->
+                        <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div class="bg-gradient-to-r from-amber-50 to-yellow-50 border-b border-amber-200 px-5 py-3">
+                                <p class="text-xs font-semibold text-amber-700 uppercase tracking-wider">
+                                    <i class="fas fa-file-alt mr-1"></i> Original in Document
+                                </p>
+                            </div>
+                            <div class="p-5">
+                                <p id="original-citation-text" class="text-gray-800 italic leading-relaxed">(Smith, 2020)</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Final Citation Editor -->
+                        <div class="bg-white rounded-xl border-2 border-blue-200 shadow-sm overflow-hidden ring-2 ring-blue-50">
+                            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-5 py-3 flex items-center justify-between">
+                                <p class="text-xs font-semibold text-blue-700 uppercase tracking-wider">
+                                    <i class="fas fa-pen-nib mr-1"></i> Final Citation
+                                </p>
+                                <span id="ad-status-badge" class="text-[10px] text-gray-500">(auto-resolved — edit or select alternative below)</span>
+                            </div>
+                            <div class="p-5">
+                                <textarea id="ad-final-textarea" class="w-full p-4 border border-gray-300 rounded-lg text-base focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y min-h-[120px] leading-relaxed" placeholder="Auto-resolved citation will appear here..."></textarea>
+                            </div>
+                            <div class="bg-gray-50 border-t border-gray-200 px-5 py-4 flex items-center gap-3">
+                                <button onclick="adCommitChange()" id="ad-commit-btn" class="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium py-3 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2">
+                                    <i class="fas fa-check"></i> Accept & Save
+                                </button>
+                                <button onclick="adCopyToClipboard()" class="px-4 py-3 bg-white text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors border border-gray-200 shadow-sm" title="Copy to clipboard">
+                                    <i class="fas fa-copy text-gray-400"></i>
+                                </button>
+                                <button onclick="adKeepOriginal()" class="px-4 py-3 bg-white text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors border border-gray-200 shadow-sm" title="Keep original">
+                                    <i class="fas fa-undo text-gray-400"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Alternative Resolutions -->
+                        <div>
+                            <div class="flex items-center justify-between mb-3">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                    <i class="fas fa-magic mr-1"></i> Alternative Resolutions
+                                </p>
+                                <button onclick="adRefreshAlternatives()" class="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+                                    <i class="fas fa-sync-alt"></i> Refresh
+                                </button>
+                            </div>
+                            <div id="ad-alternatives-list" class="space-y-3">
+                                <!-- Alternatives will be rendered here -->
+                                <div class="text-center py-8 text-gray-400 bg-white rounded-xl border border-gray-200">
+                                    <i class="fas fa-search text-2xl mb-2 opacity-30"></i>
+                                    <p class="text-sm">Loading alternatives...</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Footnote Editor Panel (for footnote/endnote mode) -->
+            <div id="panel-footnote-editor" class="hidden flex-1 flex flex-col overflow-hidden">
+                
+                <!-- Editor Header -->
+                <div class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <span id="fn-editor-num" class="text-xs font-bold text-white bg-blue-600 px-2.5 py-1 rounded-full">Note 1</span>
+                        <div>
+                            <h3 class="font-semibold text-gray-800">Resolve Citation</h3>
+                            <p class="text-xs text-gray-500">Edit or select an alternative below</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span id="fn-type-badge" class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-gray-100 text-gray-600">UNKNOWN</span>
+                        <button onclick="fnNavigate(-1)" id="fn-btn-prev" class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed" disabled>
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <span id="fn-editor-position" class="text-xs text-gray-500 min-w-[60px] text-center">1 of 5</span>
+                        <button onclick="fnNavigate(1)" id="fn-btn-next" class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Scrollable Content -->
+                <div class="flex-1 overflow-y-auto p-6">
+                    <div class="max-w-3xl mx-auto space-y-6">
+                        
+                        <!-- Original Citation Card -->
+                        <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div class="bg-gradient-to-r from-amber-50 to-yellow-50 border-b border-amber-200 px-5 py-3">
+                                <p class="text-xs font-semibold text-amber-700 uppercase tracking-wider">
+                                    <i class="fas fa-file-alt mr-1"></i> Original Citation
+                                </p>
+                            </div>
+                            <div class="p-5">
+                                <p id="fn-original-text" class="text-gray-800 italic leading-relaxed">Citation text here...</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Final Citation Editor -->
+                        <div class="bg-white rounded-xl border-2 border-blue-200 shadow-sm overflow-hidden ring-2 ring-blue-50">
+                            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-5 py-3 flex items-center justify-between">
+                                <p class="text-xs font-semibold text-blue-700 uppercase tracking-wider">
+                                    <i class="fas fa-pen-nib mr-1"></i> Final Citation
+                                </p>
+                                <span class="text-[10px] text-gray-500">(auto-resolved — edit or select alternative below)</span>
+                            </div>
+                            <div class="p-5">
+                                <textarea id="fn-final-textarea" class="w-full p-4 border border-gray-300 rounded-lg text-base focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y min-h-[120px] leading-relaxed" placeholder="Auto-resolved citation will appear here..."></textarea>
+                            </div>
+                            <div class="bg-gray-50 border-t border-gray-200 px-5 py-4 flex items-center gap-3">
+                                <button onclick="fnCommitChange()" id="fn-commit-btn" class="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium py-3 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2">
+                                    <i class="fas fa-check"></i> Accept & Save
+                                </button>
+                                <button onclick="fnCopyToClipboard()" class="px-4 py-3 bg-white text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors border border-gray-200 shadow-sm">
+                                    <i class="fas fa-copy text-gray-400"></i>
+                                </button>
+                                <button onclick="fnAppendMode()" class="px-4 py-3 bg-white text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors border border-gray-200 shadow-sm" title="Append another source">
+                                    <i class="fas fa-plus text-gray-400"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Alternative Resolutions -->
+                        <div>
+                            <div class="flex items-center justify-between mb-3">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                    <i class="fas fa-magic mr-1"></i> Alternative Resolutions
+                                </p>
+                                <button onclick="fnSearchAlternatives()" class="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+                                    <i class="fas fa-sync-alt"></i> Refresh
+                                </button>
+                            </div>
+                            <div id="fn-alternatives-list" class="space-y-3">
+                                <!-- Alternatives will be rendered here -->
+                                <div class="text-center py-8 text-gray-400 bg-white rounded-xl border border-gray-200">
+                                    <i class="fas fa-search text-2xl mb-2 opacity-30"></i>
+                                    <p class="text-sm">Loading alternatives...</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Success Panel (all reviewed) -->
+            <div id="panel-success" class="hidden flex-1 flex items-center justify-center">
+                <div class="text-center max-w-lg mx-auto p-8">
+                    <div class="w-24 h-24 bg-gradient-to-br from-green-400 to-emerald-500 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg">
+                        <i class="fas fa-check text-4xl text-white"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-800 mb-2">All Citations Reviewed!</h2>
+                    <p class="text-gray-500 mb-6">
+                        Your document is ready for download with properly formatted references.
+                    </p>
+                    
+                    <div class="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+                        <div class="grid grid-cols-2 gap-4 text-center">
+                            <div>
+                                <p id="final-total" class="text-3xl font-bold text-gray-800">0</p>
+                                <p class="text-xs text-gray-500">Citations Found</p>
+                            </div>
+                            <div>
+                                <p id="final-accepted" class="text-3xl font-bold text-green-600">0</p>
+                                <p class="text-xs text-gray-500">References Added</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button onclick="downloadDocument()" class="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold py-4 px-8 rounded-xl transition-all text-lg shadow-lg hover:shadow-xl flex items-center justify-center gap-3 w-full">
+                        <i class="fas fa-download"></i>
+                        Download Processed Document
+                    </button>
+                    
+                    <button onclick="exportMetadataCSV()" class="mt-3 w-full py-3 px-6 bg-white border border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+                        <i class="fas fa-file-csv"></i>
+                        Export Citations as CSV
+                    </button>
+                    
+                    <button onclick="backToReview()" class="mt-4 w-full py-3 px-6 bg-white border border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+                        <i class="fas fa-edit"></i>
+                        Back to Review
+                    </button>
+                    
+                    <button onclick="resetDocument()" class="mt-4 text-gray-500 hover:text-gray-700 text-sm">
+                        <i class="fas fa-redo mr-1"></i> Process Another Document
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Processing Overlay -->
+            <div id="processing-overlay" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-md mx-4 text-center">
+                    <div class="mb-6">
+                        <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full mb-4">
+                            <i class="fas fa-magic text-white text-2xl animate-pulse"></i>
+                        </div>
+                        <h3 class="text-xl font-bold text-gray-800">Processing Document</h3>
+                        <p class="text-gray-500 text-sm mt-1">Looking up your citations...</p>
+                    </div>
+                    
+                    <div class="space-y-3">
+                        <div class="text-sm text-gray-600">
+                            <span class="inline-block w-2 h-2 bg-blue-500 rounded-full animate-ping mr-2"></span>
+                            <span id="processing-step">Extracting citations...</span>
+                        </div>
+                        
+                        <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                            <div id="processing-progress" class="bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full transition-all duration-500" style="width: 10%"></div>
+                        </div>
+                        
+                        <p class="text-xs text-gray-400 mt-4">
+                            This may take a moment for documents with many citations
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        /*
+         * CitateGenie 3.1 - Full Review Workflow
+         * User-in-the-loop citation selection
+         */
+        
+        // ========== STATE ==========
+        let currentSessionId = null;
+        let currentCitations = [];
+        let activeCitationIndex = -1;
+        let selectedOptionIndex = 0;
+        let outputType = 'footnote';
+        let currentStyle = 'Chicago Manual of Style';
+        
+        // Style info mapping
+        const STYLE_INFO = {
+            'Chicago Manual of Style': { type: 'footnote', bib: 'Bibliography' },
+            'Bluebook': { type: 'footnote', bib: 'Bibliography' },
+            'OSCOLA': { type: 'footnote', bib: 'Bibliography' },
+            'APA 7': { type: 'author-date', bib: 'References' },
+            'MLA 9': { type: 'author-date', bib: 'Works Cited' },
+            'Chicago Author-Date': { type: 'author-date', bib: 'References' },
+            'Harvard': { type: 'author-date', bib: 'Bibliography' },
+        };
+        
+        // ========== INITIALIZATION ==========
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('file-input').addEventListener('change', handleFileUpload);
+            updateStyleInfo();
+        });
+        
+        // ========== STYLE INFO ==========
+        function updateStyleInfo() {
+            currentStyle = document.getElementById('style-selector').value;
+            const info = STYLE_INFO[currentStyle] || { type: 'footnote', bib: 'Bibliography' };
+            outputType = info.type;
+            
+            const typeEl = document.getElementById('style-output-type');
+            const bibEl = document.getElementById('style-bib-title');
+            
+            if (info.type === 'footnote') {
+                typeEl.innerHTML = '<i class="fas fa-superscript"></i> Footnotes';
+                typeEl.className = 'output-indicator output-footnote';
+            } else {
+                typeEl.innerHTML = '<i class="fas fa-user-clock"></i> Author-Date';
+                typeEl.className = 'output-indicator output-author-date';
+            }
+            
+            bibEl.textContent = `→ ${info.bib}`;
+        }
+        
+        // ========== FILE UPLOAD ==========
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            if (!file.name.endsWith('.docx')) {
+                alert('Please upload a .docx file');
+                return;
+            }
+            
+            // Show loading
+            document.getElementById('upload-loading').classList.remove('hidden');
+            document.getElementById('upload-btn').classList.add('hidden');
+            showProcessingOverlay();
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('style', currentStyle);
+            
+            // Determine endpoint based on style type
+            const styleInfo = STYLE_INFO[currentStyle] || { type: 'footnote' };
+            const endpoint = styleInfo.type === 'author-date' 
+                ? '/api/process-author-date' 
+                : '/api/process';
+            
+            try {
+                updateProcessingStatus('Uploading document...', 20);
+                
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                updateProcessingStatus('Processing citations...', 60);
+                
+                const data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.error || 'Processing failed');
+                }
+                
+                updateProcessingStatus('Preparing review...', 90);
+                
+                // Store session and citations
+                currentSessionId = data.session_id;
+                // Footnote mode returns 'notes', author-date returns 'citations'
+                currentCitations = data.citations || data.notes || [];
+                
+                // Update UI
+                document.getElementById('file-name-display').textContent = file.name;
+                document.getElementById('file-info').classList.remove('hidden');
+                document.getElementById('upload-loading').classList.add('hidden');
+                
+                // Show output type badge
+                const headerBadge = document.getElementById('output-type-badge');
+                headerBadge.classList.remove('hidden');
+                if (outputType === 'footnote') {
+                    headerBadge.innerHTML = '<i class="fas fa-superscript"></i><span>Footnotes</span>';
+                    headerBadge.className = 'output-indicator output-footnote';
+                } else {
+                    headerBadge.innerHTML = '<i class="fas fa-user-clock"></i><span>Author-Date</span>';
+                    headerBadge.className = 'output-indicator output-author-date';
+                }
+                
+                // Update counts
+                document.getElementById('citation-count').textContent = `${currentCitations.length} total`;
+                
+                // Check if author-date mode with citations to review
+                if (outputType === 'author-date' && currentCitations.length > 0) {
+                    // Show review UI
+                    renderCitationList();
+                    selectCitation(0);
+                    
+                    document.getElementById('panel-empty').classList.add('hidden');
+                    document.getElementById('panel-editor').classList.remove('hidden');
+                    document.getElementById('panel-footnote-editor').classList.add('hidden');
+                    document.getElementById('panel-success').classList.add('hidden');
+                    
+                    // Show progress badge
+                    document.getElementById('progress-badge').classList.remove('hidden');
+                    updateProgressBadge();
+                    
+                } else if (outputType === 'footnote' && currentCitations.length > 0) {
+                    // Footnote mode - show editor for review
+                    fnRenderCitationList();
+                    fnLoadEditor(0);
+                    
+                    document.getElementById('panel-empty').classList.add('hidden');
+                    document.getElementById('panel-editor').classList.add('hidden');
+                    document.getElementById('panel-footnote-editor').classList.remove('hidden');
+                    document.getElementById('panel-success').classList.add('hidden');
+                    document.getElementById('download-area').classList.remove('hidden');
+                    
+                    // Show progress badge
+                    document.getElementById('progress-badge').classList.remove('hidden');
+                    fnUpdateProgressBadge();
+                    
+                } else {
+                    // No citations found
+                    alert('No citations found in document');
+                    resetDocument();
+                }
+                
+                hideProcessingOverlay();
+                
+            } catch (error) {
+                console.error('Upload error:', error);
+                hideProcessingOverlay();
+                document.getElementById('upload-loading').classList.add('hidden');
+                document.getElementById('upload-btn').classList.remove('hidden');
+                alert('Error processing document: ' + error.message);
+            }
+        }
+        
+        // ========== CITATION LIST ==========
+        function renderCitationList() {
+            const container = document.getElementById('citation-list');
+            
+            if (currentCitations.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-inbox text-4xl mb-3 opacity-30"></i>
+                        <p class="text-sm font-medium">No citations found</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            currentCitations.forEach((cite, idx) => {
+                const isActive = idx === activeCitationIndex;
+                const isAccepted = cite.accepted;
+                
+                let statusClass = 'pending';
+                let statusIcon = '<i class="fas fa-clock text-amber-500"></i>';
+                
+                if (isAccepted) {
+                    statusClass = 'accepted';
+                    statusIcon = '<i class="fas fa-check-circle text-green-500"></i>';
+                }
+                if (isActive) {
+                    statusClass += ' active';
+                }
+                
+                // Check if this is a URL citation
+                const isUrlCitation = cite.is_url || false;
+                const urlIndicator = isUrlCitation ? '<span class="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-2">URL</span>' : '';
+                
+                // For URLs, truncate display to make it readable
+                let displayOriginal = cite.original || '';
+                if (isUrlCitation && displayOriginal.length > 50) {
+                    displayOriginal = displayOriginal.substring(0, 47) + '...';
+                }
+                
+                html += `
+                    <div class="citation-item ${statusClass}" onclick="selectCitation(${idx})" id="cite-${idx}">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="text-xs font-bold text-gray-400">#${idx + 1}</span>
+                                    ${statusIcon}
+                                    ${urlIndicator}
+                                </div>
+                                <p class="text-sm text-gray-800 truncate font-medium">${escapeHtml(displayOriginal)}</p>
+                                ${isAccepted && cite.formatted ? `
+                                    <p class="text-xs text-green-600 mt-1 truncate">✓ ${escapeHtml(truncate(cite.formatted, 50))}</p>
+                                ` : isUrlCitation && cite.parenthetical ? `
+                                    <p class="text-xs text-blue-600 mt-1">→ ${escapeHtml(cite.parenthetical)}</p>
+                                ` : `
+                                    <p class="text-xs text-gray-400 mt-1">${cite.options?.length || 0} option${cite.options?.length !== 1 ? 's' : ''} found</p>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+            updateAcceptedCount();
+        }
+        
+        // ========== SELECT CITATION (Author-Date Mode) ==========
+        function selectCitation(idx) {
+            if (idx < 0 || idx >= currentCitations.length) return;
+            
+            activeCitationIndex = idx;
+            const cite = currentCitations[idx];
+            
+            // Update list highlighting
+            document.querySelectorAll('.citation-item').forEach((el, i) => {
+                el.classList.remove('active');
+                if (i === idx) el.classList.add('active');
+            });
+            
+            // Scroll active item into view
+            const activeEl = document.getElementById(`cite-${idx}`);
+            if (activeEl) {
+                activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            
+            // Update editor header
+            document.getElementById('editor-citation-num').textContent = `#${idx + 1}`;
+            document.getElementById('editor-position').textContent = `${idx + 1} of ${currentCitations.length}`;
+            
+            // For URL citations, show the URL and the parenthetical it will become
+            const isUrlCitation = cite.is_url || false;
+            const originalText = cite.original || '(Unknown)';
+            
+            if (isUrlCitation) {
+                // Show truncated URL with parenthetical preview
+                const displayUrl = originalText.length > 60 ? originalText.substring(0, 57) + '...' : originalText;
+                document.getElementById('original-citation-text').innerHTML = 
+                    `<span class="text-blue-600">${escapeHtml(displayUrl)}</span>` +
+                    (cite.parenthetical ? `<br><span class="text-sm text-gray-600">→ Will become: <strong>${escapeHtml(cite.parenthetical)}</strong></span>` : '');
+            } else {
+                document.getElementById('original-citation-text').textContent = originalText;
+            }
+            
+            // Update type badge
+            const typeBadge = document.getElementById('ad-type-badge');
+            const citationType = isUrlCitation ? 'url' : (cite.options?.[1]?.citation_type || 'unknown');
+            typeBadge.textContent = citationType.toUpperCase();
+            typeBadge.className = `text-[10px] font-bold uppercase px-2 py-0.5 rounded badge-${citationType}`;
+            
+            // Update status badge
+            const statusBadge = document.getElementById('ad-status-badge');
+            if (cite.accepted) {
+                statusBadge.textContent = '(previously saved — edit to change)';
+                statusBadge.className = 'text-[10px] text-green-600 font-medium';
+            } else if (isUrlCitation) {
+                statusBadge.textContent = '(URL citation — review and accept)';
+                statusBadge.className = 'text-[10px] text-blue-500';
+            } else {
+                statusBadge.textContent = '(auto-resolved — edit or select alternative below)';
+                statusBadge.className = 'text-[10px] text-gray-500';
+            }
+            
+            // Update nav buttons
+            document.getElementById('btn-prev').disabled = idx === 0;
+            document.getElementById('btn-next').disabled = idx === currentCitations.length - 1;
+            
+            // Populate textarea with formatted citation (or original if no formatting)
+            const textarea = document.getElementById('ad-final-textarea');
+            if (cite.formatted) {
+                textarea.value = cite.formatted;
+            } else if (cite.options && cite.options.length > 1) {
+                // No formatted text yet - need to format the recommended option
+                // This shouldn't happen with the backend fix, but handle it gracefully
+                textarea.value = '';
+                textarea.placeholder = 'Loading recommendation...';
+                adFormatRecommendedOption(cite);
+            } else {
+                // No options - show original
+                textarea.value = cite.original || '';
+            }
+            
+            // Render alternatives
+            adRenderAlternatives(cite);
+        }
+        
+        // Format the recommended option on-demand (fallback if backend didn't pre-format)
+        async function adFormatRecommendedOption(cite) {
+            if (!cite.options || cite.options.length < 2) return;
+            
+            const recommendedOption = cite.options[1]; // First AI result
+            
+            try {
+                const response = await fetch('/api/accept-reference', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        citation_id: cite.id || cite.note_id,
+                        selected_option: 1,
+                        style: currentStyle
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success && data.formatted) {
+                    cite.formatted = data.formatted;
+                    document.getElementById('ad-final-textarea').value = data.formatted;
+                    document.getElementById('ad-final-textarea').placeholder = 'Auto-resolved citation will appear here...';
+                }
+            } catch (error) {
+                console.error('Format error:', error);
+            }
+        }
+        
+        // ========== RENDER ALTERNATIVES (Author-Date Mode) ==========
+        function adRenderAlternatives(cite) {
+            const container = document.getElementById('ad-alternatives-list');
+            const options = cite.options || [];
+            
+            // Skip the first option (Keep Original) - we have a button for that
+            const alternatives = options.slice(1);
+            
+            if (alternatives.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-8 text-gray-400 bg-white rounded-xl border border-gray-200">
+                        <i class="fas fa-search text-2xl mb-2 opacity-30"></i>
+                        <p class="text-sm">No alternatives found</p>
+                        <p class="text-xs mt-1">Edit the citation manually above</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            alternatives.forEach((opt, idx) => {
+                // Build author string
+                const authors = opt.authors?.length > 0 
+                    ? opt.authors.slice(0, 3).join(', ') + (opt.authors.length > 3 ? ' et al.' : '')
+                    : '';
+                
+                // Build source badge
+                const sourceBadge = opt.source
+                    ? `<span class="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">${escapeHtml(opt.source)}</span>`
+                    : '';
+                
+                // The actual option index is idx + 1 (since we skipped Keep Original)
+                const optionIndex = idx + 1;
+                
+                html += `
+                    <div onclick="adSelectAlternative(${optionIndex})" 
+                         class="p-4 bg-white rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 cursor-pointer transition-all">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded badge-${opt.citation_type || 'unknown'}">${(opt.citation_type || 'Unknown').toUpperCase()}</span>
+                                ${sourceBadge}
+                            </div>
+                            ${opt.year ? `<span class="text-xs text-gray-500">${escapeHtml(opt.year)}</span>` : ''}
+                        </div>
+                        <p class="text-sm font-medium text-gray-800 mb-1">${escapeHtml(opt.title || 'Untitled')}</p>
+                        ${authors ? `<p class="text-xs text-gray-500">${escapeHtml(authors)}</p>` : ''}
+                        ${opt.journal ? `<p class="text-xs text-gray-400 italic mt-1">${escapeHtml(opt.journal)}</p>` : ''}
+                        ${opt.publisher ? `<p class="text-xs text-gray-400 mt-1">${escapeHtml(opt.publisher)}</p>` : ''}
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        // ========== SELECT ALTERNATIVE (Author-Date Mode) ==========
+        async function adSelectAlternative(optionIndex) {
+            if (activeCitationIndex < 0) return;
+            
+            const cite = currentCitations[activeCitationIndex];
+            
+            // Format the selected option and put it in the textarea
+            try {
+                const response = await fetch('/api/accept-reference', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        citation_id: cite.id || cite.note_id,
+                        selected_option: optionIndex,
+                        style: currentStyle
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success && data.formatted) {
+                    document.getElementById('ad-final-textarea').value = data.formatted;
+                }
+            } catch (error) {
+                console.error('Format alternative error:', error);
+            }
+        }
+        
+        // ========== KEEP ORIGINAL (Author-Date Mode) ==========
+        function adKeepOriginal() {
+            if (activeCitationIndex < 0) return;
+            
+            const cite = currentCitations[activeCitationIndex];
+            document.getElementById('ad-final-textarea').value = cite.original || '';
+        }
+        
+        // ========== COPY TO CLIPBOARD (Author-Date Mode) ==========
+        function adCopyToClipboard() {
+            const textarea = document.getElementById('ad-final-textarea');
+            navigator.clipboard.writeText(textarea.value).then(() => {
+                // Brief visual feedback
+                const btn = event.currentTarget;
+                const icon = btn.querySelector('i');
+                icon.classList.remove('fa-copy');
+                icon.classList.add('fa-check', 'text-green-500');
+                setTimeout(() => {
+                    icon.classList.remove('fa-check', 'text-green-500');
+                    icon.classList.add('fa-copy');
+                }, 1500);
+            });
+        }
+        
+        // ========== REFRESH ALTERNATIVES (Author-Date Mode) ==========
+        async function adRefreshAlternatives() {
+            if (activeCitationIndex < 0) return;
+            
+            const cite = currentCitations[activeCitationIndex];
+            const container = document.getElementById('ad-alternatives-list');
+            
+            container.innerHTML = `
+                <div class="flex items-center justify-center py-8 text-gray-400 bg-white rounded-xl border border-gray-200">
+                    <div class="w-5 h-5 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mr-3"></div>
+                    Searching databases...
+                </div>
+            `;
+            
+            try {
+                const response = await fetch('/api/cite/multiple', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        query: cite.original, 
+                        style: currentStyle, 
+                        limit: 5 
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.results && data.results.length > 0) {
+                    // Store fresh alternatives
+                    window.adFreshAlternatives = data.results;
+                    
+                    container.innerHTML = data.results.map((r, i) => `
+                        <div onclick="adSelectFreshAlternative(${i})" 
+                             class="p-4 bg-white rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 cursor-pointer transition-all">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded badge-${r.type || 'unknown'}">${(r.type || 'Unknown').toUpperCase()}</span>
+                                <span class="text-xs text-gray-400">${r.source || ''}</span>
+                            </div>
+                            <p class="text-sm text-gray-700 leading-relaxed">${escapeHtml(r.citation)}</p>
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = `
+                        <div class="text-center py-8 text-gray-400 bg-white rounded-xl border border-gray-200">
+                            <i class="fas fa-search text-2xl mb-2 opacity-30"></i>
+                            <p class="text-sm">No alternatives found</p>
+                            <p class="text-xs mt-1">Edit the citation manually above</p>
+                        </div>
+                    `;
+                }
+            } catch (err) {
+                console.error('Refresh error:', err);
+                container.innerHTML = `
+                    <div class="text-center py-8 text-red-400 bg-white rounded-xl border border-red-200">
+                        <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+                        <p class="text-sm">Search failed</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Select a fresh alternative from refresh results
+        function adSelectFreshAlternative(idx) {
+            if (window.adFreshAlternatives && window.adFreshAlternatives[idx]) {
+                document.getElementById('ad-final-textarea').value = window.adFreshAlternatives[idx].citation;
+            }
+        }
+        
+        // ========== COMMIT CHANGE (Author-Date Mode) ==========
+        let adSaveInProgress = false;
+        
+        async function adCommitChange() {
+            if (activeCitationIndex < 0 || !currentSessionId) {
+                alert('No citation selected');
+                return;
+            }
+            
+            // Prevent concurrent saves
+            if (adSaveInProgress) {
+                console.log('[adCommitChange] Blocked - save already in progress');
+                return;
+            }
+            adSaveInProgress = true;
+            
+            const cite = currentCitations[activeCitationIndex];
+            const newText = document.getElementById('ad-final-textarea').value;
+            
+            const btn = document.getElementById('ad-commit-btn');
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto"></div>';
+            btn.disabled = true;
+            
+            try {
+                // Build request body
+                const requestBody = {
+                    session_id: currentSessionId,
+                    reference_id: cite.id || cite.note_id,
+                    formatted: newText
+                };
+                
+                // For URL citations, include additional data for body replacement
+                if (cite.is_url) {
+                    requestBody.is_url = true;
+                    requestBody.original_url = cite.original_url || cite.original;
+                    requestBody.parenthetical = cite.parenthetical || '';
+                }
+                
+                const response = await fetch('/api/accept-reference', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Update local state
+                    cite.formatted = newText;
+                    cite.accepted = true;
+                    
+                    // Update status badge
+                    document.getElementById('ad-status-badge').textContent = '(saved ✓)';
+                    document.getElementById('ad-status-badge').className = 'text-[10px] text-green-600 font-medium';
+                    
+                    // Update list
+                    renderCitationList();
+                    updateAcceptedCount();
+                    updateProgressBadge();
+                    
+                    // Show success briefly, then move to next
+                    btn.innerHTML = '<i class="fas fa-check"></i> Saved!';
+                    btn.classList.remove('from-blue-600', 'to-indigo-600');
+                    btn.classList.add('from-green-600', 'to-emerald-600');
+                    
+                    setTimeout(() => {
+                        btn.innerHTML = originalHtml;
+                        btn.classList.remove('from-green-600', 'to-emerald-600');
+                        btn.classList.add('from-blue-600', 'to-indigo-600');
+                        btn.disabled = false;
+                        adSaveInProgress = false;
+                        
+                        // Check if all done
+                        const allAccepted = currentCitations.every(c => c.accepted);
+                        if (allAccepted) {
+                            showSuccessPanel();
+                        } else {
+                            // Move to next unaccepted
+                            const nextUnaccepted = currentCitations.findIndex((c, i) => i > activeCitationIndex && !c.accepted);
+                            if (nextUnaccepted !== -1) {
+                                selectCitation(nextUnaccepted);
+                            }
+                        }
+                    }, 800);
+                    
+                } else {
+                    throw new Error(data.error || 'Save failed');
+                }
+                
+            } catch (error) {
+                console.error('Save error:', error);
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+                adSaveInProgress = false;
+                alert('Error saving: ' + error.message);
+            }
+        }
+        
+        // ========== NAVIGATION (Author-Date Mode) ==========
+        function adNavigate(delta) {
+            const newIndex = activeCitationIndex + delta;
+            if (newIndex >= 0 && newIndex < currentCitations.length) {
+                selectCitation(newIndex);
+            }
+        }
+        
+        // ========== UPDATE COUNTS ==========
+        function updateAcceptedCount() {
+            const accepted = currentCitations.filter(c => c.accepted).length;
+            const el = document.getElementById('accepted-count');
+            
+            if (accepted > 0) {
+                el.textContent = `${accepted} accepted`;
+                el.classList.remove('hidden');
+            } else {
+                el.classList.add('hidden');
+            }
+        }
+        
+        function updateProgressBadge() {
+            const accepted = currentCitations.filter(c => c.accepted).length;
+            document.getElementById('progress-text').textContent = `${accepted}/${currentCitations.length} reviewed`;
+        }
+        
+        // ========== SUCCESS PANEL ==========
+        function showSuccessPanel() {
+            document.getElementById('panel-editor').classList.add('hidden');
+            document.getElementById('panel-success').classList.remove('hidden');
+            document.getElementById('download-area').classList.remove('hidden');
+            
+            // Count citations that were actually changed (formatted differs from original)
+            const changedCount = currentCitations.filter(c => 
+                c.accepted && c.formatted && c.formatted !== c.original
+            ).length;
+            document.getElementById('final-total').textContent = currentCitations.length;
+            document.getElementById('final-accepted').textContent = changedCount;
+        }
+        
+        // ========== FOOTNOTE MODE FUNCTIONS ==========
+        let fnActiveIndex = -1;
+        let fnSuccessCount = 0;
+        let fnJustSaved = false;  // Bug #2 fix: prevent double-save in fnNavigate
+        let fnSaveInProgress = false;  // Bug #2 fix: prevent concurrent updates (race condition)
+        
+        // Render citation list for footnote mode (clickable for editing)
+        function fnRenderCitationList() {
+            const container = document.getElementById('citation-list');
+            
+            if (currentCitations.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-inbox text-4xl mb-3 opacity-30"></i>
+                        <p class="text-sm font-medium">No citations found</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            currentCitations.forEach((cite, idx) => {
+                const isActive = idx === fnActiveIndex;
+                const isSuccess = cite.success === true;
+                const statusClass = isActive ? 'border-blue-400 bg-blue-50' : 
+                                   (isSuccess ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-white');
+                const iconHtml = isSuccess 
+                    ? '<i class="fas fa-check-circle text-green-500 text-xs"></i>'
+                    : '<i class="fas fa-clock text-amber-400 text-xs"></i>';
+                
+                const displayText = (cite.text || cite.original || `Note ${idx + 1}`).substring(0, 50);
+                const noteId = cite.id || idx + 1;
+                
+                html += `
+                    <div id="fn-note-${noteId}" onclick="fnLoadEditor(${idx})" 
+                         class="p-3 rounded-lg border ${statusClass} mb-2 cursor-pointer hover:border-blue-300 transition-colors">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-mono text-gray-400">Note ${noteId}</span>
+                            <span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">${cite.type || '?'}</span>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <span class="mt-0.5">${iconHtml}</span>
+                            <div class="text-sm text-gray-700 truncate">${displayText}${displayText.length >= 50 ? '...' : ''}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        // Load a footnote into the editor
+        function fnLoadEditor(idx) {
+            // Bug #2 fix: Don't allow loading a new citation while save is in progress
+            if (fnSaveInProgress) {
+                console.log('[fnLoadEditor] Blocked - save in progress');
+                return;
+            }
+            
+            fnActiveIndex = idx;
+            fnJustSaved = false;  // Bug #2 fix: Reset flag when loading new citation
+            const cite = currentCitations[idx];
+            const noteId = cite.id || idx + 1;
+            
+            // Update sidebar highlighting
+            fnRenderCitationList();
+            
+            // Update editor header
+            document.getElementById('fn-editor-num').textContent = `Note ${noteId}`;
+            document.getElementById('fn-editor-position').textContent = `${idx + 1} of ${currentCitations.length}`;
+            
+            // Update type badge
+            const typeEl = document.getElementById('fn-type-badge');
+            typeEl.textContent = (cite.type || 'unknown').toUpperCase();
+            typeEl.className = `text-[10px] font-bold uppercase px-2 py-0.5 rounded badge-${cite.type || 'unknown'}`;
+            
+            // Show original text
+            document.getElementById('fn-original-text').textContent = cite.text || cite.original || '';
+            
+            // Pre-populate textarea with auto-resolved citation
+            document.getElementById('fn-final-textarea').value = cite.formatted || '';
+            
+            // Update navigation buttons
+            document.getElementById('fn-btn-prev').disabled = idx <= 0;
+            document.getElementById('fn-btn-next').disabled = idx >= currentCitations.length - 1;
+            
+            // Search for alternatives
+            fnSearchAlternatives();
+        }
+        
+        // Search for alternative resolutions
+        async function fnSearchAlternatives() {
+            const container = document.getElementById('fn-alternatives-list');
+            container.innerHTML = `
+                <div class="flex items-center justify-center py-8 text-gray-400 bg-white rounded-xl border border-gray-200">
+                    <div class="w-5 h-5 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mr-3"></div>
+                    Searching databases...
+                </div>
+            `;
+            
+            const query = document.getElementById('fn-original-text').textContent;
+            if (!query) return;
+            
+            try {
+                const res = await fetch('/api/cite/multiple', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        query, 
+                        style: currentStyle, 
+                        limit: 5 
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success && data.results && data.results.length > 0) {
+                    // Store for selection
+                    window.fnAlternatives = data.results;
+                    
+                    container.innerHTML = data.results.map((r, i) => `
+                        <div onclick="fnSelectAlternative(${i})" 
+                             class="p-4 bg-white rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 cursor-pointer transition-all">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded badge-${r.type || 'unknown'}">${r.type || 'Unknown'}</span>
+                                <span class="text-xs text-gray-400">${r.source || ''}</span>
+                            </div>
+                            <p class="text-sm text-gray-700 leading-relaxed">${r.citation}</p>
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = `
+                        <div class="text-center py-8 text-gray-400 bg-white rounded-xl border border-gray-200">
+                            <i class="fas fa-search text-2xl mb-2 opacity-30"></i>
+                            <p class="text-sm">No alternatives found</p>
+                            <p class="text-xs mt-1">Type the citation manually above</p>
+                        </div>
+                    `;
+                }
+            } catch (err) {
+                console.error('Search error:', err);
+                container.innerHTML = `
+                    <div class="text-center py-8 text-red-400 bg-white rounded-xl border border-red-200">
+                        <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+                        <p class="text-sm">Search failed</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Select an alternative and put it in the textarea
+        function fnSelectAlternative(idx) {
+            if (window.fnAlternatives && window.fnAlternatives[idx]) {
+                document.getElementById('fn-final-textarea').value = window.fnAlternatives[idx].citation;
+            }
+        }
+        
+        // Commit the change (save to session)
+        async function fnCommitChange(silent = false) {
+            if (fnActiveIndex < 0 || !currentSessionId) {
+                if (!silent) alert('No citation selected');
+                return;
+            }
+            
+            // Bug #2 fix: Prevent concurrent saves (race condition)
+            if (fnSaveInProgress) {
+                console.log('[fnCommitChange] Blocked - save already in progress');
+                return;
+            }
+            fnSaveInProgress = true;
+            
+            const cite = currentCitations[fnActiveIndex];
+            const noteId = cite.id || fnActiveIndex + 1;
+            const newText = document.getElementById('fn-final-textarea').value;
+            
+            const btn = document.getElementById('fn-commit-btn');
+            const originalHtml = btn.innerHTML;
+            
+            if (!silent) {
+                btn.innerHTML = '<div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto"></div>';
+                btn.disabled = true;
+            }
+            
+            try {
+                const res = await fetch('/api/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        note_id: noteId,
+                        html: newText
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    // Update local state
+                    currentCitations[fnActiveIndex].formatted = newText;
+                    // Only increment count if this citation wasn't already saved
+                    if (!currentCitations[fnActiveIndex].success) {
+                        fnSuccessCount++;
+                    }
+                    currentCitations[fnActiveIndex].success = true;
+                    
+                    // Bug #2 fix: Mark that we just saved to prevent double-save in fnNavigate
+                    if (!silent) {
+                        fnJustSaved = true;
+                    } else {
+                        // Silent save completed - allow new saves
+                        fnSaveInProgress = false;
+                    }
+                    
+                    // Update sidebar
+                    fnRenderCitationList();
+                    fnUpdateProgressBadge();
+                    
+                    if (!silent) {
+                        btn.innerHTML = '<i class="fas fa-check"></i> Saved!';
+                        btn.classList.remove('from-blue-600', 'to-indigo-600');
+                        btn.classList.add('from-green-600', 'to-emerald-600');
+                        
+                        setTimeout(() => {
+                            btn.innerHTML = originalHtml;
+                            btn.classList.remove('from-green-600', 'to-emerald-600');
+                            btn.classList.add('from-blue-600', 'to-indigo-600');
+                            btn.disabled = false;
+                            fnSaveInProgress = false;  // Bug #2 fix: Allow new saves now
+                            
+                            // Auto-advance to next
+                            if (fnActiveIndex < currentCitations.length - 1) {
+                                fnNavigate(1);
+                            } else {
+                                // All done - check if we should show success
+                                const allDone = currentCitations.every(c => c.success);
+                                if (allDone) {
+                                    showFnSuccess();
+                                }
+                            }
+                        }, 800);
+                    }
+                } else {
+                    if (!silent) {
+                        btn.innerHTML = originalHtml;
+                        btn.disabled = false;
+                        fnSaveInProgress = false;  // Bug #2 fix: Allow new saves after failure
+                        alert('Failed to save: ' + (data.error || 'Unknown error'));
+                    } else {
+                        fnSaveInProgress = false;  // Bug #2 fix: Clear even on silent failure
+                    }
+                }
+            } catch (err) {
+                console.error('Save error:', err);
+                fnSaveInProgress = false;  // Bug #2 fix: Clear on exception
+                if (!silent) {
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
+                    alert('Failed to save changes');
+                }
+            }
+        }
+        
+        // Navigate between footnotes (auto-saves current)
+        async function fnNavigate(delta) {
+            // Bug #2 fix: Skip auto-save if we just did an explicit save (prevents race condition)
+            if (fnJustSaved) {
+                fnJustSaved = false;
+            } else {
+                // Auto-save current before navigating (only for manual navigation via arrows)
+                const textarea = document.getElementById('fn-final-textarea');
+                if (fnActiveIndex >= 0 && textarea && textarea.value.trim()) {
+                    await fnCommitChange(true);  // silent save
+                }
+            }
+            
+            const newIdx = fnActiveIndex + delta;
+            if (newIdx >= 0 && newIdx < currentCitations.length) {
+                fnLoadEditor(newIdx);
+            }
+        }
+        
+        // Update progress badge for footnote mode
+        function fnUpdateProgressBadge() {
+            const accepted = currentCitations.filter(c => c.success).length;
+            document.getElementById('progress-text').textContent = `${accepted}/${currentCitations.length} reviewed`;
+        }
+        
+        // Copy to clipboard
+        function fnCopyToClipboard() {
+            const textarea = document.getElementById('fn-final-textarea');
+            navigator.clipboard.writeText(textarea.value).then(() => {
+                // Brief visual feedback
+                const btn = event.target.closest('button');
+                btn.innerHTML = '<i class="fas fa-check text-green-500"></i>';
+                setTimeout(() => {
+                    btn.innerHTML = '<i class="fas fa-copy text-gray-400"></i>';
+                }, 1000);
+            });
+        }
+        
+        // Append mode (add semicolon for multiple sources)
+        function fnAppendMode() {
+            const textarea = document.getElementById('fn-final-textarea');
+            textarea.value = textarea.value.trim() + '; ';
+            textarea.focus();
+            textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        }
+        
+        // Show success panel for footnote mode
+        function showFnSuccess() {
+            document.getElementById('panel-footnote-editor').classList.add('hidden');
+            document.getElementById('panel-success').classList.remove('hidden');
+            
+            document.getElementById('final-total').textContent = currentCitations.length;
+            document.getElementById('final-accepted').textContent = fnSuccessCount;
+        }
+        
+        // Return to review from success panel (Bug #1 fix)
+        function backToReview() {
+            document.getElementById('panel-success').classList.add('hidden');
+            document.getElementById('panel-footnote-editor').classList.remove('hidden');
+            // Load the first citation for review
+            fnLoadEditor(0);
+        }
+        
+        // ========== DOWNLOAD ==========
+        async function downloadDocument() {
+            if (!currentSessionId) {
+                alert('No document to download');
+                return;
+            }
+            
+            try {
+                // For author-date mode, finalize first
+                if (outputType === 'author-date') {
+                    const finalizeResponse = await fetch('/api/finalize-author-date', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            session_id: currentSessionId,
+                            references: [] // Backend will use accepted_references from session
+                        })
+                    });
+                    
+                    const finalizeData = await finalizeResponse.json();
+                    
+                    if (!finalizeResponse.ok || !finalizeData.success) {
+                        throw new Error(finalizeData.error || 'Failed to finalize document');
+                    }
+                }
+                
+                // Now download
+                const response = await fetch(`/api/download/${currentSessionId}`);
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || 'Download failed');
+                }
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `citategenie_processed.docx`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+                
+            } catch (error) {
+                console.error('Download error:', error);
+                alert('Error downloading document: ' + error.message);
+            }
+        }
+        
+        // ========== EXPORT CSV ==========
+        async function exportMetadataCSV() {
+            if (!currentSessionId) {
+                alert('No document to export');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/export-metadata/${currentSessionId}`);
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || 'Export failed');
+                }
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `citategenie_citations.csv`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+                
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('Error exporting citations: ' + error.message);
+            }
+        }
+        
+        // ========== RESET ==========
+        function resetDocument() {
+            currentSessionId = null;
+            currentCitations = [];
+            activeCitationIndex = -1;
+            selectedOptionIndex = 0;
+            fnActiveIndex = -1;
+            fnSuccessCount = 0;
+            fnJustSaved = false;  // Bug #2 fix: Reset flag
+            fnSaveInProgress = false;  // Bug #2 fix: Reset flag
+            adSaveInProgress = false;  // Reset author-date save flag
+            
+            document.getElementById('file-input').value = '';
+            document.getElementById('file-info').classList.add('hidden');
+            document.getElementById('download-area').classList.add('hidden');
+            document.getElementById('upload-btn').classList.remove('hidden');
+            document.getElementById('upload-loading').classList.add('hidden');
+            document.getElementById('output-type-badge').classList.add('hidden');
+            document.getElementById('progress-badge').classList.add('hidden');
+            document.getElementById('accepted-count').classList.add('hidden');
+            document.getElementById('citation-count').textContent = '0 total';
+            
+            document.getElementById('panel-empty').classList.remove('hidden');
+            document.getElementById('panel-editor').classList.add('hidden');
+            document.getElementById('panel-footnote-editor').classList.add('hidden');
+            document.getElementById('panel-success').classList.add('hidden');
+            
+            document.getElementById('citation-list').innerHTML = `
+                <div id="list-empty" class="text-center py-12 text-gray-400">
+                    <i class="fas fa-inbox text-4xl mb-3 opacity-30"></i>
+                    <p class="text-sm font-medium">Upload a document to begin</p>
+                    <p class="text-xs mt-1 text-gray-300">Citations will appear here for review</p>
+                </div>
+            `;
+        }
+        
+        // ========== PROCESSING OVERLAY ==========
+        function showProcessingOverlay() {
+            document.getElementById('processing-overlay').classList.remove('hidden');
+        }
+        
+        function hideProcessingOverlay() {
+            document.getElementById('processing-overlay').classList.add('hidden');
+        }
+        
+        function updateProcessingStatus(message, progress) {
+            document.getElementById('processing-step').textContent = message;
+            document.getElementById('processing-progress').style.width = `${progress}%`;
+        }
+        
+        // ========== UTILITIES ==========
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function truncate(str, len) {
+            if (!str) return '';
+            return str.length > len ? str.substring(0, len) + '...' : str;
+        }
+    </script>
+</body>
+</html>

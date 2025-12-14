@@ -522,7 +522,6 @@ def classify_citation(text: str) -> Tuple[CitationType, Optional[CitationMetadat
         authors=data.get('authors', []),
         year=data.get('year', ''),
         confidence=data.get('confidence', 0.5),
-        notes=data.get('reasoning', ''),
     )
     
     return citation_type, metadata

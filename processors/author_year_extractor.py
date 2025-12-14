@@ -61,15 +61,21 @@ class AuthorDateExtractor:
     # Pattern components
     # Author name: Capitalized word, may include hyphenated names, apostrophes, Unicode
     # Supports lowercase prefixes: van, de, von, den, der, la, le, di, da, dos, das, del, della
+    # Supports title prefixes: St., Ste., San, Santa
+    # Supports Celtic/Arabic prefixes: Mac, Mc, O', Al-, Ibn, Abu, Ben
     # Supports suffixes: Jr., Sr., III, IV, etc.
-    # Examples: van Gogh, de Silva, von Neumann, Smith Jr., Williams III
-    AUTHOR_PREFIX = r"(?:(?:van|de|von|den|der|la|le|di|da|dos|das|del|della|du|el|al|bin|ibn)\s+)?"
+    # Examples: van Gogh, de Silva, von Neumann, Smith Jr., Williams III, St. John, Al-Farabi
+    AUTHOR_PREFIX = r"(?:(?:van|de|von|den|der|la|le|di|da|dos|das|del|della|du|el|al|bin|ibn|St\.?|Ste\.?|San|Santa|Mac|Mc|O'|Al-|Abu|Ben)\s*)?"
     AUTHOR_CORE = r"[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'''\-]+"
-    AUTHOR_SUFFIX = r"(?:\s+(?:Jr\.?|Sr\.?|III|IV|V|2nd|3rd))?"
+    AUTHOR_SUFFIX = r"(?:\s+(?:Jr\.?|Sr\.?|III|IV|V|VI|VII|VIII|2nd|3rd|4th))?"
     AUTHOR_NAME = rf"{AUTHOR_PREFIX}{AUTHOR_CORE}{AUTHOR_SUFFIX}"
     
-    # Year: 4 digits, optional letter suffix, "n.d.", or "in press"
-    YEAR = r"(?:\d{4}[a-z]?|n\.d\.|in\s+press)"
+    # Year: 3-4 digits (for ancient sources), optional letter suffix, "n.d.", "in press", "forthcoming", etc.
+    # Also handles: ca. 1850, 2018-2020, 1900/1953 (original/translation)
+    YEAR = r"(?:ca\.?\s*)?\d{3,4}[a-z]?(?:\s*[-–/]\s*\d{3,4})?|n\.d\.|in\s+press|forthcoming"
+    
+    # Simple year for validation (just 3-4 digits)
+    SIMPLE_YEAR_CHECK = re.compile(r'\d{3,4}')
     
     # Page indicators - captures the page number
     PAGE = r"(?:pp?\.\s*(\d+(?:\s*[-–—]\s*\d+)?))"
@@ -208,6 +214,129 @@ class AuthorDateExtractor:
             rf'\(({CORPORATE_AUTHOR})\s*,\s*({YEAR})\)',
             re.UNICODE
         ),
+        
+        # [PATTERN 16] (Word Word YYYY) - dataset/org citation without comma
+        # e.g., "(Measure DHS 2012)", "(World Bank 2019)"
+        # Matches 1-4 capitalized words followed directly by a year
+        re.compile(
+            r'\(([A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*){0,3})\s+(\d{4}[a-z]?)\)',
+            re.UNICODE
+        ),
+        
+        # [PATTERN 17] (ACRONYM, Year) - all-caps organizational acronyms
+        # e.g., "(WHO, 2020)", "(UNESCO, 2019)", "(NIH, 2021)", "(CDC, 2020)"
+        re.compile(
+            r'\(([A-Z]{2,10})\s*,\s*(\d{4}[a-z]?)\)',
+            re.UNICODE
+        ),
+        
+        # [PATTERN 18] (Initial. Surname, Year) - author with initial
+        # e.g., "(J. Smith, 2020)", "(A. B. Jones, 2019)"
+        re.compile(
+            r'\(([A-Z]\.\s*(?:[A-Z]\.\s*)?[A-Z][a-zA-Z\-]+)\s*,\s*(' + YEAR + r')\)',
+            re.UNICODE
+        ),
+        
+        # [PATTERN 19] (Party v. Party, Year) - court case citations
+        # e.g., "(Brown v. Board of Education, 1954)", "(Roe v. Wade, 1973)"
+        re.compile(
+            r'\(([A-Z][a-zA-Z\.\s]+\s+v\.?\s+[A-Z][a-zA-Z\.\s]+)\s*,\s*(\d{4})\)',
+            re.UNICODE
+        ),
+        
+        # [PATTERN 20] ("Title," Year) - no author, title in quotes
+        # e.g., '("Article Title," 2020)' (APA style - comma inside quotes)
+        # e.g., '("Article Title", 2020)' (comma outside quotes)
+        # Handles straight quotes (") and curly/smart quotes (" ")
+        re.compile(
+            r'\([""\u201c]([^""\u201c\u201d]+)[""\u201d],?\s+(\d{3,4}[a-z]?)\)',
+            re.UNICODE
+        ),
+        
+        # [PATTERN 21] (Author, personal communication, Date) - personal communications
+        # e.g., "(J. Smith, personal communication, January 15, 2020)"
+        # e.g., "(Smith, personal communication, 2020)"
+        re.compile(
+            r'\(([A-Z]\.?\s*[A-Z][a-zA-Z\-]+)\s*,\s*personal\s+communication\s*,\s*([A-Za-z]+\s+\d{1,2},?\s+)?(\d{4})\)',
+            re.UNICODE | re.IGNORECASE
+        ),
+        
+        # [PATTERN 22] (Author, interview, Date) - interview citations
+        # e.g., "(Smith, interview, 2020)", "(J. Jones, interview, March 2019)"
+        re.compile(
+            r'\(([A-Z]\.?\s*[A-Z][a-zA-Z\-]+)\s*,\s*interview\s*,\s*([A-Za-z]+\s+)?(\d{4})\)',
+            re.UNICODE | re.IGNORECASE
+        ),
+        
+        # [PATTERN 23] ACRONYM (Year) - narrative acronym citation
+        # e.g., "WHO (2020)", "UNESCO (2019)"
+        re.compile(
+            r'\b([A-Z]{2,10})\s*\((\d{4}[a-z]?)\)',
+            re.UNICODE
+        ),
+        
+        # [PATTERN 24] (Author, Year, reprinted Year) - reprints
+        # e.g., "(Smith, 1920, reprinted 2000)"
+        re.compile(
+            r'\((' + AUTHOR_NAME + r')\s*,\s*(\d{4})\s*,\s*reprinted\s+(\d{4})\)',
+            re.UNICODE | re.IGNORECASE
+        ),
+        
+        # [PATTERN 25] (Author, trans. Year) or (Author, Year/Year) - translations
+        # e.g., "(Freud, trans. 1953)", "(Piaget, 1926/1959)"
+        re.compile(
+            r'\((' + AUTHOR_NAME + r')\s*,\s*(?:trans\.?\s+)?(\d{4})\s*/\s*(\d{4})\)',
+            re.UNICODE | re.IGNORECASE
+        ),
+        
+        # [PATTERN 26] (Public Law XX-XXX, Year) - US legislation
+        # e.g., "(Public Law 94-142, 1975)", "(Pub. L. 111-148, 2010)"
+        re.compile(
+            r'\((Pub(?:lic)?\.?\s*L(?:aw)?\.?\s*\d+[-–]\d+)\s*,\s*(\d{4})\)',
+            re.UNICODE | re.IGNORECASE
+        ),
+        
+        # [PATTERN 27] (Act Name, Year) or (Act Name Year) - named legislation
+        # e.g., "(Civil Rights Act, 1964)", "(Americans with Disabilities Act, 1990)"
+        re.compile(
+            r'\(([A-Z][a-zA-Z\s]+Act)\s*,?\s*(\d{4})\)',
+            re.UNICODE
+        ),
+        
+        # [PATTERN 28] (Book Chapter:Verse) - Bible/religious text references
+        # e.g., "(Genesis 1:1)", "(John 3:16)", "(Quran 2:255)"
+        re.compile(
+            r'\((Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|Samuel|Kings|Chronicles|Ezra|Nehemiah|Esther|Job|Psalms?|Proverbs|Ecclesiastes|Song\s+of\s+Solomon|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|Corinthians|Galatians|Ephesians|Philippians|Colossians|Thessalonians|Timothy|Titus|Philemon|Hebrews|James|Peter|Jude|Revelation|Quran|Qur\'an|Torah|Talmud)\s*(\d+:\d+(?:[-–]\d+)?)\)',
+            re.UNICODE | re.IGNORECASE
+        ),
+        
+        # [PATTERN 29] (Anonymous, Year) - anonymous author
+        # e.g., "(Anonymous, 2020)", "(Anon., 2019)"
+        re.compile(
+            r'\((Anon(?:ymous)?\.?)\s*,\s*(\d{3,4}[a-z]?)\)',
+            re.UNICODE | re.IGNORECASE
+        ),
+        
+        # [PATTERN 30] (Title Act of Year) - legislation with "of"
+        # e.g., "(Education Act of 1944)", "(Clean Air Act of 1970)"
+        re.compile(
+            r'\(([A-Z][a-zA-Z\s]+Act)\s+of\s+(\d{4})\)',
+            re.UNICODE
+        ),
+        
+        # [PATTERN 31] Section/Chapter references in legal docs
+        # e.g., "(§ 1983)", "(Section 504)"
+        re.compile(
+            r'\((§|Section|Sec\.?)\s*(\d+[a-zA-Z]?(?:\.\d+)?)\)',
+            re.UNICODE | re.IGNORECASE
+        ),
+        
+        # [PATTERN 32] (Author, Year BCE/CE/BC/AD) - ancient dates with era markers
+        # e.g., "(Aristotle, 350 BCE)", "(Plato, 380 BC)"
+        re.compile(
+            r'\((' + AUTHOR_NAME + r')\s*,\s*(\d{1,4})\s*(BCE?|CE|AD)\)',
+            re.UNICODE | re.IGNORECASE
+        ),
     ]
     
     # ==========================================================================
@@ -236,6 +365,20 @@ class AuthorDateExtractor:
         re.UNICODE
     )
     
+    # ==========================================================================
+    # EXPLANATORY PARENTHETICAL FILTER (Added 2025-12-14)
+    # Skip parentheticals starting with e.g., i.e., etc. that are NOT citations
+    # Examples to SKIP: (e.g., early age), (i.e., some definition)
+    # Examples to KEEP: (e.g., Smith, 2020), (Measure DHS 2012)
+    # ==========================================================================
+    EXPLANATORY_ABBREVS = re.compile(
+        r'\(\s*(?:e\.?g\.?|i\.?e\.?|viz\.?|cf\.?)\s*,?\s+[^)]*\)',
+        re.IGNORECASE
+    )
+    
+    # Year pattern for checking if explanatory paren contains a citation
+    CONTAINS_YEAR = re.compile(r'\b(?:19|20)\d{2}[a-z]?\b')
+    
     # Simpler pattern for individual citations within multi-citation
     # Used after splitting by semicolon
     SIMPLE_AUTHOR = r"([A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'''\-]+(?:\s+et\s+al\.?)?(?:\s*(?:&|and)\s*[A-Z\u00C0-\u024F][a-zA-Z\u00C0-\u024F'''\-]+)?)"
@@ -260,6 +403,31 @@ class AuthorDateExtractor:
         """
         if not text:
             return []
+        
+        # =======================================================================
+        # PREPROCESS: Remove explanatory parentheticals that are NOT citations
+        # e.g., "(e.g., early age of first marriage)" -> removed
+        # but "(e.g., Smith, 2020)" -> kept (contains year, is a citation)
+        # =======================================================================
+        def is_explanatory_not_citation(match):
+            """Return True if this is an explanatory phrase, not a citation."""
+            content = match.group(0)
+            # If it contains a year, it might be a citation - keep it
+            if self.CONTAINS_YEAR.search(content):
+                return False
+            # No year = explanatory phrase, not a citation
+            return True
+        
+        # Replace explanatory parentheticals with placeholder to prevent matching
+        processed_text = text
+        for match in self.EXPLANATORY_ABBREVS.finditer(text):
+            if is_explanatory_not_citation(match):
+                # Replace with spaces to preserve character positions for other matches
+                placeholder = ' ' * len(match.group(0))
+                processed_text = processed_text[:match.start()] + placeholder + processed_text[match.end():]
+        
+        # Use processed text for extraction
+        text = processed_text
         
         citations = []
         found_spans = set()  # Track character spans to avoid duplicates
@@ -441,6 +609,191 @@ class AuthorDateExtractor:
             citation = AuthorYearCitation(
                 author=match.group(1).strip(),
                 year=match.group(2),
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 16: (Word Word YYYY) - dataset/org without comma
+        # e.g., "(Measure DHS 2012)", "(World Bank 2019)"
+        for match in self.PATTERNS[16].finditer(text):
+            citation = AuthorYearCitation(
+                author=match.group(1).strip(),
+                year=match.group(2),
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 17: (ACRONYM, Year) - organizational acronyms
+        # e.g., "(WHO, 2020)", "(UNESCO, 2019)"
+        for match in self.PATTERNS[17].finditer(text):
+            citation = AuthorYearCitation(
+                author=match.group(1).strip(),
+                year=match.group(2),
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 18: (Initial. Surname, Year) - author with initial
+        # e.g., "(J. Smith, 2020)"
+        for match in self.PATTERNS[18].finditer(text):
+            citation = AuthorYearCitation(
+                author=match.group(1).strip(),
+                year=match.group(2),
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 19: (Party v. Party, Year) - court cases
+        # e.g., "(Brown v. Board of Education, 1954)"
+        for match in self.PATTERNS[19].finditer(text):
+            citation = AuthorYearCitation(
+                author=match.group(1).strip(),
+                year=match.group(2),
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 20: ("Title," Year) - no author, title in quotes
+        # e.g., '("Article Title," 2020)'
+        for match in self.PATTERNS[20].finditer(text):
+            citation = AuthorYearCitation(
+                author=f'"{match.group(1).strip()}"',  # Keep quotes to indicate title
+                year=match.group(2),
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 21: (Author, personal communication, Date) - personal communications
+        for match in self.PATTERNS[21].finditer(text):
+            year = match.group(3)  # Year is in group 3
+            citation = AuthorYearCitation(
+                author=match.group(1).strip(),
+                year=year,
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 22: (Author, interview, Date) - interviews
+        for match in self.PATTERNS[22].finditer(text):
+            year = match.group(3)  # Year is in group 3
+            citation = AuthorYearCitation(
+                author=match.group(1).strip(),
+                year=year,
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 23: ACRONYM (Year) - narrative acronym
+        # e.g., "WHO (2020)"
+        for match in self.PATTERNS[23].finditer(text):
+            citation = AuthorYearCitation(
+                author=match.group(1).strip(),
+                year=match.group(2),
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 24: (Author, Year, reprinted Year) - reprints
+        for match in self.PATTERNS[24].finditer(text):
+            # Combine original and reprint years
+            year_str = f"{match.group(2)}/{match.group(3)}"
+            citation = AuthorYearCitation(
+                author=match.group(1).strip(),
+                year=year_str,
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 25: (Author, Year/Year) - translations
+        for match in self.PATTERNS[25].finditer(text):
+            # Combine original and translation years
+            year_str = f"{match.group(2)}/{match.group(3)}"
+            citation = AuthorYearCitation(
+                author=match.group(1).strip(),
+                year=year_str,
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 26: (Public Law XX-XXX, Year) - US legislation
+        for match in self.PATTERNS[26].finditer(text):
+            citation = AuthorYearCitation(
+                author=match.group(1).strip(),
+                year=match.group(2),
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 27: (Act Name, Year) - named legislation
+        for match in self.PATTERNS[27].finditer(text):
+            citation = AuthorYearCitation(
+                author=match.group(1).strip(),
+                year=match.group(2),
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 28: (Book Chapter:Verse) - Bible/religious references
+        for match in self.PATTERNS[28].finditer(text):
+            citation = AuthorYearCitation(
+                author=match.group(1).strip(),  # Book name
+                year=match.group(2),  # Chapter:verse as "year"
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 29: (Anonymous, Year)
+        for match in self.PATTERNS[29].finditer(text):
+            citation = AuthorYearCitation(
+                author="Anonymous",  # Normalize to full word
+                year=match.group(2),
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 30: (Title Act of Year) - legislation with "of"
+        for match in self.PATTERNS[30].finditer(text):
+            citation = AuthorYearCitation(
+                author=match.group(1).strip(),
+                year=match.group(2),
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 31: (Section XXX) - legal section references
+        for match in self.PATTERNS[31].finditer(text):
+            section_type = match.group(1)
+            section_num = match.group(2)
+            citation = AuthorYearCitation(
+                author=f"{section_type} {section_num}",
+                year="",  # No year for section refs
+                is_et_al=False,
+                raw_text=match.group(0)
+            )
+            add_if_new(citation, match.start(), match.end())
+        
+        # Pattern 32: (Author, Year BCE/CE/BC/AD) - ancient dates
+        for match in self.PATTERNS[32].finditer(text):
+            year_str = f"{match.group(2)} {match.group(3).upper()}"
+            citation = AuthorYearCitation(
+                author=match.group(1).strip(),
+                year=year_str,
                 is_et_al=False,
                 raw_text=match.group(0)
             )
@@ -926,6 +1279,14 @@ if __name__ == "__main__":
     
     As noted by several researchers (Beck, 2011; Seligman, 2012; Csikszentmihalyi, 1990),
     positive psychology has gained significant traction.
+    
+    We use data from the Demographic and Health Surveys (Measure DHS 2012) and
+    multilevel models to explore how micro religious beliefs shape individuals' 
+    sexual behaviors through micro (e.g., early age of first marriage) or macro 
+    (e.g., limits on women's mobility) processes. The term (i.e., the definition)
+    should not be extracted as a citation.
+    
+    However, citations with prefixes like (e.g., Williams, 2018) should be extracted.
     """
     
     print("=" * 60)
@@ -942,6 +1303,35 @@ if __name__ == "__main__":
     
     print(f"\nUnique citations: {len(extractor.get_unique_citations())}")
     
+    print("\n" + "=" * 60)
+    print("EXPLANATORY FILTER TEST")
+    print("=" * 60)
+    
+    # Verify explanatory parentheticals are NOT extracted
+    explanatory_test = "(e.g., early age of first marriage) and (i.e., some definition) and (eg more examples)"
+    ext2 = AuthorDateExtractor()
+    cites2 = ext2.extract_from_text(explanatory_test)
+    print(f"\nExplanatory text: {explanatory_test}")
+    print(f"Citations found: {len(cites2)} (should be 0)")
+    
+    # Verify citation with prefix IS extracted
+    prefix_citation_test = "Some text (e.g., Williams, 2018) and more text"
+    ext3 = AuthorDateExtractor()
+    cites3 = ext3.extract_from_text(prefix_citation_test)
+    print(f"\nPrefix citation text: {prefix_citation_test}")
+    print(f"Citations found: {len(cites3)} (should be 1)")
+    if cites3:
+        print(f"  - {cites3[0].author}, {cites3[0].year}")
+    
+    # Verify Measure DHS 2012 is extracted
+    measure_test = "data from the Demographic and Health Surveys (Measure DHS 2012)"
+    ext4 = AuthorDateExtractor()
+    cites4 = ext4.extract_from_text(measure_test)
+    print(f"\nMeasure DHS text: {measure_test}")
+    print(f"Citations found: {len(cites4)} (should be 1)")
+    if cites4:
+        print(f"  - {cites4[0].author}, {cites4[0].year}")
+    
     print("\nSearch queries:")
-    for author, year, second in extractor.get_search_queries():
+    for author, year, second, third in extractor.get_search_queries():
         print(f"  - Author: {author}, Year: {year}, Second: {second}")

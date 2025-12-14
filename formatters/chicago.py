@@ -96,11 +96,11 @@ class ChicagoFormatter(BaseFormatter):
             journal_part.append(f"({m.year})")
         
         if journal_part:
-            parts.append(" ".join(journal_part))
-        
-        # Pages
-        if m.pages:
-            parts.append(f": {m.pages}")
+            journal_str = " ".join(journal_part)
+            # Pages come immediately after year with colon (no space before colon)
+            if m.pages:
+                journal_str += f": {m.pages}"
+            parts.append(journal_str)
         
         # URL/DOI
         if m.doi:

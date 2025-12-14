@@ -18,6 +18,7 @@ Usage:
 Output: costs.csv in the application root directory
 
 Version History:
+    2025-12-14 V1.1: Added EMAIL_AFTER_EVERY_CALL for test mode auto-emails
     2025-12-13 V1.0: Initial implementation - CSV logging with cost calculation
 """
 
@@ -25,6 +26,13 @@ import os
 import csv
 from datetime import datetime
 from pathlib import Path
+
+# =============================================================================
+# EMAIL CONFIGURATION
+# =============================================================================
+# Set to True to send email after every API call (test mode)
+# Set to False for production (or use environment variable)
+EMAIL_AFTER_EVERY_CALL = os.environ.get('EMAIL_AFTER_EVERY_CALL', 'true').lower() == 'true'
 
 # =============================================================================
 # PRICING (per 1M tokens, updated Dec 2024)
@@ -160,6 +168,18 @@ def log_api_call(
         print(f"[CostTracker] {provider}: 1 search = ${cost:.4f}")
     else:
         print(f"[CostTracker] {provider}: {input_tokens} in + {output_tokens} out = ${cost:.6f}")
+    
+    # ==========================================================================
+    # AUTO-EMAIL: Send cost report after each API call (test mode)
+    # Change EMAIL_AFTER_EVERY_CALL to False for production
+    # ==========================================================================
+    if EMAIL_AFTER_EVERY_CALL:
+        try:
+            from email_service import send_cost_report
+            send_cost_report()
+            print(f"[CostTracker] Auto-email sent after API call")
+        except Exception as e:
+            print(f"[CostTracker] Auto-email failed: {e}")
     
     return cost
 

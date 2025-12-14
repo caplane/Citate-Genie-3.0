@@ -1197,7 +1197,18 @@ def process_author_date():
         extracted_citations = extractor.extract_citations_from_docx(file_bytes)
         unique_citations = extractor.get_unique_citations(extracted_citations)
         
-        print(f"[API] Extracted {len(extracted_citations)} citations, {len(unique_citations)} unique")
+        print(f"[API] Extracted {len(extracted_citations)} author-year citations, {len(unique_citations)} unique")
+        
+        # =====================================================================
+        # URL EXTRACTION (Added 2025-12-14)
+        # Extract URLs from document body for AI-first metadata lookup
+        # =====================================================================
+        from processors.url_extractor import extract_urls_from_docx, get_unique_urls
+        
+        extracted_urls = extract_urls_from_docx(file_bytes)
+        unique_urls = get_unique_urls(extracted_urls)
+        
+        print(f"[API] Extracted {len(extracted_urls)} URLs, {len(unique_urls)} unique")
         
         # Process citations in PARALLEL for speed
         from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1318,6 +1329,207 @@ def process_author_date():
                 citations[idx] = future.result()
                 print(f"[API] Completed citation {idx + 1}/{len(unique_citations)}")
         
+        # =====================================================================
+        # URL PROCESSING (Added 2025-12-14)
+        # Process each URL through AI lookup to extract metadata
+        # =====================================================================
+        
+        def extract_surname(author_name):
+            """
+            Extract surname from author name in various formats.
+            Handles: "Smith, John" -> "Smith"
+                     "John Smith" -> "Smith"
+                     "Smith" -> "Smith"
+                     "van Gogh, Vincent" -> "van Gogh"
+            """
+            if not author_name:
+                return 'Unknown'
+            
+            author_name = author_name.strip()
+            
+            # If contains comma, surname is before the comma
+            if ',' in author_name:
+                return author_name.split(',')[0].strip()
+            
+            # Otherwise, surname is the last word (or last word with prefix)
+            parts = author_name.split()
+            if len(parts) == 0:
+                return 'Unknown'
+            elif len(parts) == 1:
+                return parts[0]
+            else:
+                # Check for lowercase prefix (van, de, etc.) before last name
+                prefixes = ['van', 'de', 'von', 'den', 'der', 'la', 'le', 'di', 'da', 'dos', 'das', 'del', 'della', 'du', 'el', 'al', 'bin', 'ibn']
+                if len(parts) >= 2 and parts[-2].lower() in prefixes:
+                    return f"{parts[-2]} {parts[-1]}"
+                return parts[-1]
+        
+        def process_single_url(url_idx, url_info):
+            """Process one URL - called in parallel. Returns citation-like structure."""
+            url = url_info.get('url', '')
+            original_text = url  # The URL itself is the "original"
+            
+            # Calculate global ID (after author-year citations)
+            global_id = len(unique_citations) + url_idx + 1
+            
+            try:
+                # Use the unified router to get metadata for the URL
+                from unified_router import get_citation
+                metadata, formatted = get_citation(url, style)
+                
+                if metadata:
+                    # Build parenthetical text from metadata
+                    authors = metadata.authors if metadata.authors else []
+                    year = metadata.year or ''
+                    
+                    if len(authors) >= 3:
+                        # 3+ authors: use et al.
+                        surname = extract_surname(authors[0])
+                        parenthetical = f"({surname} et al., {year})"
+                    elif len(authors) == 2:
+                        # 2 authors: Author1 & Author2
+                        surname1 = extract_surname(authors[0])
+                        surname2 = extract_surname(authors[1])
+                        parenthetical = f"({surname1} & {surname2}, {year})"
+                    elif len(authors) == 1:
+                        # 1 author
+                        surname = extract_surname(authors[0])
+                        parenthetical = f"({surname}, {year})"
+                    else:
+                        # No author - use title (shortened if needed)
+                        title_short = (metadata.title[:30] + '...') if metadata.title and len(metadata.title) > 30 else (metadata.title or 'Unknown')
+                        parenthetical = f"({title_short}, {year})"
+                        parenthetical = f"({title_short}, {year})"
+                    
+                    options = [{
+                        'id': 0,
+                        'title': '[Keep Original URL]',
+                        'authors': [],
+                        'year': '',
+                        'journal': '',
+                        'publisher': '',
+                        'volume': '',
+                        'issue': '',
+                        'pages': '',
+                        'doi': '',
+                        'url': url,
+                        'citation_type': 'original',
+                        'source': 'original',
+                        'is_original': True
+                    }, {
+                        'id': 1,
+                        'title': metadata.title or '',
+                        'authors': authors,
+                        'year': year,
+                        'journal': getattr(metadata, 'journal', '') or '',
+                        'publisher': getattr(metadata, 'publisher', '') or '',
+                        'volume': getattr(metadata, 'volume', '') or '',
+                        'issue': getattr(metadata, 'issue', '') or '',
+                        'pages': getattr(metadata, 'pages', '') or '',
+                        'doi': getattr(metadata, 'doi', '') or '',
+                        'url': getattr(metadata, 'url', url) or url,
+                        'citation_type': metadata.citation_type.name.lower() if metadata.citation_type else 'url',
+                        'source': getattr(metadata, 'source_engine', 'ai_lookup'),
+                        'is_original': False,
+                        'parenthetical': parenthetical  # The in-text citation to use
+                    }]
+                    
+                    return {
+                        'id': global_id,
+                        'note_id': global_id,
+                        'original': original_text,
+                        'original_url': url,  # Store URL for replacement
+                        'global_start': url_info.get('global_start', 0),
+                        'global_end': url_info.get('global_end', 0),
+                        'options': options,
+                        'selected_option': 1,
+                        'formatted': formatted,
+                        'parenthetical': parenthetical,  # The in-text citation
+                        'accepted': False,
+                        'is_url': True  # Flag to identify URL citations
+                    }
+                else:
+                    # No metadata found
+                    return {
+                        'id': global_id,
+                        'note_id': global_id,
+                        'original': original_text,
+                        'original_url': url,
+                        'global_start': url_info.get('global_start', 0),
+                        'global_end': url_info.get('global_end', 0),
+                        'options': [{
+                            'id': 0,
+                            'title': '[Keep Original URL]',
+                            'authors': [],
+                            'year': '',
+                            'journal': '',
+                            'publisher': '',
+                            'volume': '',
+                            'issue': '',
+                            'pages': '',
+                            'doi': '',
+                            'url': url,
+                            'citation_type': 'original',
+                            'source': 'original',
+                            'is_original': True
+                        }],
+                        'selected_option': 0,
+                        'formatted': None,
+                        'parenthetical': None,
+                        'accepted': False,
+                        'is_url': True,
+                        'error': 'No metadata found'
+                    }
+                    
+            except Exception as e:
+                print(f"[API] Error processing URL '{url[:50]}': {e}")
+                return {
+                    'id': global_id,
+                    'note_id': global_id,
+                    'original': original_text,
+                    'original_url': url,
+                    'global_start': url_info.get('global_start', 0),
+                    'global_end': url_info.get('global_end', 0),
+                    'options': [{
+                        'id': 0,
+                        'title': '[Keep Original URL]',
+                        'authors': [],
+                        'year': '',
+                        'journal': '',
+                        'publisher': '',
+                        'volume': '',
+                        'issue': '',
+                        'pages': '',
+                        'doi': '',
+                        'url': url,
+                        'citation_type': 'original',
+                        'source': 'original',
+                        'is_original': True
+                    }],
+                    'selected_option': 0,
+                    'formatted': None,
+                    'parenthetical': None,
+                    'accepted': False,
+                    'is_url': True,
+                    'error': str(e)
+                }
+        
+        # Process URLs in parallel
+        url_citations = [None] * len(unique_urls)
+        if unique_urls:
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                url_futures = {
+                    executor.submit(process_single_url, idx, url_info): idx 
+                    for idx, url_info in enumerate(unique_urls)
+                }
+                for future in as_completed(url_futures):
+                    idx = url_futures[future]
+                    url_citations[idx] = future.result()
+                    print(f"[API] Completed URL {idx + 1}/{len(unique_urls)}")
+        
+        # Combine author-year and URL citations
+        all_citations = citations + [c for c in url_citations if c is not None]
+        
         # Create session to store results
         session_id = sessions.create()
         print(f"[API] Created author-date session {session_id[:8]}... for document {file.filename}")
@@ -1325,17 +1537,23 @@ def process_author_date():
         sessions.set(session_id, 'original_bytes', file_bytes)
         sessions.set(session_id, 'style', style)
         sessions.set(session_id, 'mode', 'author-date')
-        sessions.set(session_id, 'citations', citations)
+        sessions.set(session_id, 'citations', all_citations)  # Store combined citations
         sessions.set(session_id, 'filename', secure_filename(file.filename))
+        
+        # Count stats
+        author_year_count = len(citations)
+        url_count = len([c for c in url_citations if c is not None])
         
         return jsonify({
             'success': True,
             'session_id': session_id,
-            'citations': citations,
+            'citations': all_citations,
             'stats': {
-                'total': len(citations),
-                'with_options': sum(1 for c in citations if len(c.get('options', [])) > 1),
-                'no_options': sum(1 for c in citations if len(c.get('options', [])) <= 1)
+                'total': len(all_citations),
+                'author_year': author_year_count,
+                'urls': url_count,
+                'with_options': sum(1 for c in all_citations if len(c.get('options', [])) > 1),
+                'no_options': sum(1 for c in all_citations if len(c.get('options', [])) <= 1)
             }
         })
         
@@ -1495,26 +1713,71 @@ def accept_reference():
                     'success': False,
                     'error': 'Missing reference_id'
                 }), 400
+            
+            # For legacy format, check if URL info was provided directly
+            citation = None  # Initialize for URL check below
         
         # Get or create accepted_references dict
         accepted_refs = session_data.get('accepted_references', {})
         
-        # Store the formatted reference (keyed by reference_id)
-        accepted_refs[str(reference_id)] = {
+        # Build the accepted reference data
+        accepted_data = {
             'formatted': formatted,
             'accepted_at': time.time()
         }
+        
+        # For URL citations, also store the parenthetical and URL info
+        # Check both new format (from citation object) and legacy format (from request data)
+        if 'selected_option' in data and citation and citation.get('is_url'):
+            accepted_data['is_url'] = True
+            accepted_data['original_url'] = citation.get('original_url', '')
+            # Get parenthetical from the selected option
+            if not option.get('is_original') and option.get('parenthetical'):
+                accepted_data['parenthetical'] = option.get('parenthetical')
+            elif citation.get('parenthetical'):
+                accepted_data['parenthetical'] = citation.get('parenthetical')
+            else:
+                # Build parenthetical from authors/year if available
+                authors = option.get('authors', [])
+                year = option.get('year', '')
+                if authors and year:
+                    if len(authors) >= 3:
+                        surname = authors[0].split(',')[0].split()[-1] if authors[0] else 'Unknown'
+                        accepted_data['parenthetical'] = f"({surname} et al., {year})"
+                    elif len(authors) == 2:
+                        s1 = authors[0].split(',')[0].split()[-1] if authors[0] else 'Unknown'
+                        s2 = authors[1].split(',')[0].split()[-1] if authors[1] else 'Unknown'
+                        accepted_data['parenthetical'] = f"({s1} & {s2}, {year})"
+                    elif len(authors) == 1:
+                        surname = authors[0].split(',')[0].split()[-1] if authors[0] else 'Unknown'
+                        accepted_data['parenthetical'] = f"({surname}, {year})"
+        elif data.get('is_url'):
+            # Legacy format with URL info provided directly in request
+            accepted_data['is_url'] = True
+            accepted_data['original_url'] = data.get('original_url', '')
+            if data.get('parenthetical'):
+                accepted_data['parenthetical'] = data.get('parenthetical')
+        
+        # Store the formatted reference (keyed by reference_id)
+        accepted_refs[str(reference_id)] = accepted_data
         
         # Save back to session
         sessions.set(session_id, 'accepted_references', accepted_refs)
         
         print(f"[API] Accepted reference {reference_id} for session {session_id[:8]}")
         
-        return jsonify({
+        # Build response
+        response_data = {
             'success': True,
             'reference_id': reference_id,
             'formatted': formatted
-        })
+        }
+        
+        # Include parenthetical for URL citations
+        if accepted_data.get('parenthetical'):
+            response_data['parenthetical'] = accepted_data['parenthetical']
+        
+        return jsonify(response_data)
         
     except Exception as e:
         print(f"[API] Error in /api/accept-reference: {e}")
@@ -1587,8 +1850,27 @@ def finalize_author_date():
                     references.append({
                         'id': ref_id,
                         'original': cite.get('original', ''),
-                        'formatted': accepted_refs[ref_id].get('formatted', '')
+                        'formatted': accepted_refs[ref_id].get('formatted', ''),
+                        'parenthetical': accepted_refs[ref_id].get('parenthetical', ''),
+                        'is_url': cite.get('is_url', False),
+                        'original_url': cite.get('original_url', ''),
                     })
+        
+        # =====================================================================
+        # URL REPLACEMENT IN DOCUMENT BODY (Added 2025-12-14)
+        # Replace URLs with parenthetical citations before adding References
+        # =====================================================================
+        
+        # Collect URL replacements
+        url_replacements = []
+        for ref in references:
+            if ref.get('is_url') and ref.get('original_url') and ref.get('parenthetical'):
+                url_replacements.append({
+                    'url': ref['original_url'],
+                    'parenthetical': ref['parenthetical'],
+                })
+        
+        print(f"[API] URL replacements to make: {len(url_replacements)}")
         
         # Generate document with References section
         from io import BytesIO
@@ -1596,6 +1878,7 @@ def finalize_author_date():
         import tempfile
         import shutil
         import xml.etree.ElementTree as ET
+        import re
         
         temp_dir = tempfile.mkdtemp()
         
@@ -1616,6 +1899,97 @@ def finalize_author_date():
             tree = ET.parse(doc_path)
             root = tree.getroot()
             body = root.find('.//w:body', namespaces)
+            
+            # =================================================================
+            # STEP 1: Replace URLs in document body with parentheticals
+            # =================================================================
+            if url_replacements and body is not None:
+                # Build a map of URL -> parenthetical
+                url_to_paren = {r['url']: r['parenthetical'] for r in url_replacements}
+                
+                # Process each paragraph
+                for para in body.findall('.//w:p', namespaces):
+                    # Get all text elements in this paragraph
+                    text_elements = para.findall('.//w:t', namespaces)
+                    
+                    # Join text to find URLs
+                    full_text = ''.join(t.text or '' for t in text_elements)
+                    
+                    # Find all URLs in this paragraph that need replacement
+                    urls_in_para = []
+                    for url in url_to_paren.keys():
+                        if url in full_text:
+                            start_idx = full_text.find(url)
+                            urls_in_para.append({
+                                'url': url,
+                                'start': start_idx,
+                                'end': start_idx + len(url),
+                                'parenthetical': url_to_paren[url]
+                            })
+                    
+                    if not urls_in_para:
+                        continue
+                    
+                    # Sort by position
+                    urls_in_para.sort(key=lambda x: x['start'])
+                    
+                    # Check for adjacent URLs (within 5 characters of each other)
+                    # and merge them with semicolons
+                    merged_groups = []
+                    current_group = [urls_in_para[0]]
+                    
+                    for i in range(1, len(urls_in_para)):
+                        prev = urls_in_para[i-1]
+                        curr = urls_in_para[i]
+                        
+                        # If current URL starts within 20 chars of previous URL end
+                        # (allowing for ". " or ", " or " and " between)
+                        if curr['start'] - prev['end'] <= 20:
+                            current_group.append(curr)
+                        else:
+                            merged_groups.append(current_group)
+                            current_group = [curr]
+                    
+                    merged_groups.append(current_group)
+                    
+                    # Build replacement text for the entire paragraph
+                    new_text = full_text
+                    
+                    # Process groups in reverse order to maintain positions
+                    for group in reversed(merged_groups):
+                        if len(group) == 1:
+                            # Single URL - simple replacement
+                            url_info = group[0]
+                            new_text = new_text[:url_info['start']] + url_info['parenthetical'] + new_text[url_info['end']:]
+                        else:
+                            # Multiple adjacent URLs - combine with semicolons
+                            # Remove the inner parts of parentheticals and join
+                            parentheticals = [g['parenthetical'] for g in group]
+                            # Strip outer parens and join with semicolons
+                            inner_parts = [p.strip('()') for p in parentheticals]
+                            combined = '(' + '; '.join(inner_parts) + ')'
+                            
+                            # Replace from first URL start to last URL end
+                            start = group[0]['start']
+                            end = group[-1]['end']
+                            
+                            # Also remove any separators between URLs
+                            new_text = new_text[:start] + combined + new_text[end:]
+                    
+                    # Now update the XML with new text
+                    # Simple approach: clear all text elements and set first one
+                    if text_elements and new_text != full_text:
+                        # Clear all text elements
+                        for t in text_elements[1:]:
+                            t.text = ''
+                        # Set first element to new text
+                        text_elements[0].text = new_text
+                        
+                        print(f"[API] Replaced URLs in paragraph: {full_text[:50]}... -> {new_text[:50]}...")
+            
+            # =================================================================
+            # STEP 2: Add References section
+            # =================================================================
             
             if body is not None:
                 sect_pr = body.find('w:sectPr', namespaces)

@@ -252,55 +252,89 @@
             </div>
             
             <!-- Editor Panel (shown during review) -->
+            <!-- Author-Date Editor Panel (matching footnote UX) -->
             <div id="panel-editor" class="hidden flex-1 flex flex-col overflow-hidden">
                 
                 <!-- Editor Header -->
                 <div class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
                     <div class="flex items-center gap-3">
-                        <span id="editor-citation-num" class="text-xs font-bold text-white bg-blue-600 px-2.5 py-1 rounded-full">#1</span>
+                        <span id="editor-citation-num" class="text-xs font-bold text-white bg-green-600 px-2.5 py-1 rounded-full">#1</span>
                         <div>
-                            <h3 class="font-semibold text-gray-800">Review Citation</h3>
-                            <p class="text-xs text-gray-500">Select the correct reference from options below</p>
+                            <h3 class="font-semibold text-gray-800">Resolve Citation</h3>
+                            <p class="text-xs text-gray-500">Edit or select an alternative below</p>
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
-                        <button onclick="prevCitation()" id="btn-prev" class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed" disabled>
+                        <span id="ad-type-badge" class="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-gray-100 text-gray-600">UNKNOWN</span>
+                        <button onclick="adNavigate(-1)" id="btn-prev" class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed" disabled>
                             <i class="fas fa-chevron-left"></i>
                         </button>
                         <span id="editor-position" class="text-xs text-gray-500 min-w-[60px] text-center">1 of 5</span>
-                        <button onclick="nextCitation()" id="btn-next" class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed">
+                        <button onclick="adNavigate(1)" id="btn-next" class="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed">
                             <i class="fas fa-chevron-right"></i>
                         </button>
                     </div>
                 </div>
                 
-                <!-- Original Citation Display -->
-                <div class="bg-gradient-to-r from-amber-50 to-yellow-50 border-b border-amber-200 px-6 py-4">
-                    <p class="text-xs font-semibold text-amber-700 uppercase tracking-wider mb-1">Original in Document</p>
-                    <p id="original-citation-text" class="text-gray-800 font-medium">(Smith, 2020)</p>
-                </div>
-                
-                <!-- Options Container -->
+                <!-- Scrollable Content -->
                 <div class="flex-1 overflow-y-auto p-6">
-                    <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                        <i class="fas fa-list-ul mr-1"></i> Select the Correct Reference
-                    </p>
-                    <div id="options-container">
-                        <!-- Options will be rendered here -->
-                    </div>
-                </div>
-                
-                <!-- Action Buttons -->
-                <div class="bg-white border-t border-gray-200 px-6 py-4 flex items-center justify-between gap-4">
-                    <button onclick="keepOriginal()" class="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors">
-                        <i class="fas fa-undo mr-1"></i> Keep Original
-                    </button>
-                    <div class="flex items-center gap-3">
-                        <button onclick="acceptAndNext()" id="btn-accept-next" class="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium rounded-lg shadow-sm transition-all flex items-center gap-2">
-                            <i class="fas fa-check"></i>
-                            <span>Accept & Next</span>
-                            <i class="fas fa-chevron-right text-xs opacity-70"></i>
-                        </button>
+                    <div class="max-w-3xl mx-auto space-y-6">
+                        
+                        <!-- Original Citation Card -->
+                        <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div class="bg-gradient-to-r from-amber-50 to-yellow-50 border-b border-amber-200 px-5 py-3">
+                                <p class="text-xs font-semibold text-amber-700 uppercase tracking-wider">
+                                    <i class="fas fa-file-alt mr-1"></i> Original in Document
+                                </p>
+                            </div>
+                            <div class="p-5">
+                                <p id="original-citation-text" class="text-gray-800 italic leading-relaxed">(Smith, 2020)</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Final Citation Editor -->
+                        <div class="bg-white rounded-xl border-2 border-blue-200 shadow-sm overflow-hidden ring-2 ring-blue-50">
+                            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 px-5 py-3 flex items-center justify-between">
+                                <p class="text-xs font-semibold text-blue-700 uppercase tracking-wider">
+                                    <i class="fas fa-pen-nib mr-1"></i> Final Citation
+                                </p>
+                                <span id="ad-status-badge" class="text-[10px] text-gray-500">(auto-resolved — edit or select alternative below)</span>
+                            </div>
+                            <div class="p-5">
+                                <textarea id="ad-final-textarea" class="w-full p-4 border border-gray-300 rounded-lg text-base focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y min-h-[120px] leading-relaxed" placeholder="Auto-resolved citation will appear here..."></textarea>
+                            </div>
+                            <div class="bg-gray-50 border-t border-gray-200 px-5 py-4 flex items-center gap-3">
+                                <button onclick="adCommitChange()" id="ad-commit-btn" class="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium py-3 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2">
+                                    <i class="fas fa-check"></i> Accept & Save
+                                </button>
+                                <button onclick="adCopyToClipboard()" class="px-4 py-3 bg-white text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors border border-gray-200 shadow-sm" title="Copy to clipboard">
+                                    <i class="fas fa-copy text-gray-400"></i>
+                                </button>
+                                <button onclick="adKeepOriginal()" class="px-4 py-3 bg-white text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors border border-gray-200 shadow-sm" title="Keep original">
+                                    <i class="fas fa-undo text-gray-400"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Alternative Resolutions -->
+                        <div>
+                            <div class="flex items-center justify-between mb-3">
+                                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                    <i class="fas fa-magic mr-1"></i> Alternative Resolutions
+                                </p>
+                                <button onclick="adRefreshAlternatives()" class="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+                                    <i class="fas fa-sync-alt"></i> Refresh
+                                </button>
+                            </div>
+                            <div id="ad-alternatives-list" class="space-y-3">
+                                <!-- Alternatives will be rendered here -->
+                                <div class="text-center py-8 text-gray-400 bg-white rounded-xl border border-gray-200">
+                                    <i class="fas fa-search text-2xl mb-2 opacity-30"></i>
+                                    <p class="text-sm">Loading alternatives...</p>
+                                </div>
+                            </div>
+                        </div>
+                        
                     </div>
                 </div>
             </div>
@@ -686,7 +720,7 @@
             updateAcceptedCount();
         }
         
-        // ========== SELECT CITATION ==========
+        // ========== SELECT CITATION (Author-Date Mode) ==========
         function selectCitation(idx) {
             if (idx < 0 || idx >= currentCitations.length) return;
             
@@ -710,130 +744,51 @@
             document.getElementById('editor-position').textContent = `${idx + 1} of ${currentCitations.length}`;
             document.getElementById('original-citation-text').textContent = cite.original || '(Unknown)';
             
+            // Update type badge
+            const typeBadge = document.getElementById('ad-type-badge');
+            const citationType = cite.options?.[1]?.citation_type || 'unknown';
+            typeBadge.textContent = citationType.toUpperCase();
+            typeBadge.className = `text-[10px] font-bold uppercase px-2 py-0.5 rounded badge-${citationType}`;
+            
+            // Update status badge
+            const statusBadge = document.getElementById('ad-status-badge');
+            if (cite.accepted) {
+                statusBadge.textContent = '(previously saved — edit to change)';
+                statusBadge.className = 'text-[10px] text-green-600 font-medium';
+            } else {
+                statusBadge.textContent = '(auto-resolved — edit or select alternative below)';
+                statusBadge.className = 'text-[10px] text-gray-500';
+            }
+            
             // Update nav buttons
             document.getElementById('btn-prev').disabled = idx === 0;
             document.getElementById('btn-next').disabled = idx === currentCitations.length - 1;
             
-            // Set default selected option
-            selectedOptionIndex = cite.selected_option || (cite.options?.length > 1 ? 1 : 0);
-            
-            // Render options
-            renderOptions(cite);
-        }
-        
-        // ========== RENDER OPTIONS ==========
-        function renderOptions(cite) {
-            const container = document.getElementById('options-container');
-            const options = cite.options || [];
-            
-            if (options.length === 0) {
-                container.innerHTML = `
-                    <div class="text-center py-8 text-gray-400">
-                        <i class="fas fa-search text-3xl mb-2 opacity-30"></i>
-                        <p class="text-sm">No matches found</p>
-                        <p class="text-xs mt-1">The original citation will be kept</p>
-                    </div>
-                `;
-                return;
+            // Populate textarea with formatted citation (or original if no formatting)
+            const textarea = document.getElementById('ad-final-textarea');
+            if (cite.formatted) {
+                textarea.value = cite.formatted;
+            } else if (cite.options && cite.options.length > 1) {
+                // No formatted text yet - need to format the recommended option
+                // This shouldn't happen with the backend fix, but handle it gracefully
+                textarea.value = '';
+                textarea.placeholder = 'Loading recommendation...';
+                adFormatRecommendedOption(cite);
+            } else {
+                // No options - show original
+                textarea.value = cite.original || '';
             }
             
-            let html = '';
-            options.forEach((opt, idx) => {
-                const isSelected = idx === selectedOptionIndex;
-                const isOriginal = opt.is_original;
-                
-                let cardClass = 'option-card';
-                if (isSelected) cardClass += ' selected';
-                if (isOriginal) cardClass += ' original';
-                
-                // Build author string
-                const authors = opt.authors?.length > 0 
-                    ? opt.authors.slice(0, 3).join(', ') + (opt.authors.length > 3 ? ' et al.' : '')
-                    : '';
-                
-                // Build source badge
-                const sourceBadge = opt.source && !isOriginal
-                    ? `<span class="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">${escapeHtml(opt.source)}</span>`
-                    : '';
-                
-                html += `
-                    <div class="${cardClass}" onclick="selectOption(${idx})">
-                        <div class="flex items-start justify-between gap-3">
-                            <div class="flex-1 min-w-0">
-                                ${isOriginal ? `
-                                    <div class="flex items-center gap-2 mb-1">
-                                        <i class="fas fa-undo text-gray-400"></i>
-                                        <span class="text-sm font-medium text-gray-600">Keep Original</span>
-                                    </div>
-                                    <p class="text-xs text-gray-400">No changes will be made to this citation</p>
-                                ` : `
-                                    <div class="flex items-center gap-2 mb-1">
-                                        ${sourceBadge}
-                                        ${opt.year ? `<span class="text-xs text-gray-500">${escapeHtml(opt.year)}</span>` : ''}
-                                    </div>
-                                    <p class="text-sm font-medium text-gray-800 mb-1">${escapeHtml(opt.title || 'Untitled')}</p>
-                                    ${authors ? `<p class="text-xs text-gray-500">${escapeHtml(authors)}</p>` : ''}
-                                    ${opt.journal ? `<p class="text-xs text-gray-400 italic mt-1">${escapeHtml(opt.journal)}</p>` : ''}
-                                    ${opt.publisher ? `<p class="text-xs text-gray-400 mt-1">${escapeHtml(opt.publisher)}</p>` : ''}
-                                `}
-                            </div>
-                            <div class="flex-shrink-0">
-                                ${isSelected 
-                                    ? '<i class="fas fa-check-circle text-blue-600 text-lg"></i>' 
-                                    : '<i class="far fa-circle text-gray-300 text-lg"></i>'
-                                }
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-            
-            container.innerHTML = html;
+            // Render alternatives
+            adRenderAlternatives(cite);
         }
         
-        // ========== SELECT OPTION ==========
-        function selectOption(idx) {
-            selectedOptionIndex = idx;
+        // Format the recommended option on-demand (fallback if backend didn't pre-format)
+        async function adFormatRecommendedOption(cite) {
+            if (!cite.options || cite.options.length < 2) return;
             
-            // Update visual selection
-            document.querySelectorAll('.option-card').forEach((el, i) => {
-                el.classList.toggle('selected', i === idx);
-                const icon = el.querySelector('.fa-check-circle, .fa-circle');
-                if (icon) {
-                    if (i === idx) {
-                        icon.classList.remove('far', 'fa-circle', 'text-gray-300');
-                        icon.classList.add('fas', 'fa-check-circle', 'text-blue-600');
-                    } else {
-                        icon.classList.remove('fas', 'fa-check-circle', 'text-blue-600');
-                        icon.classList.add('far', 'fa-circle', 'text-gray-300');
-                    }
-                }
-            });
+            const recommendedOption = cite.options[1]; // First AI result
             
-            // Update citation's selected option
-            if (activeCitationIndex >= 0) {
-                currentCitations[activeCitationIndex].selected_option = idx;
-            }
-        }
-        
-        // ========== KEEP ORIGINAL ==========
-        function keepOriginal() {
-            selectOption(0); // Option 0 is always "Keep Original"
-            acceptAndNext();
-        }
-        
-        // ========== ACCEPT AND NEXT ==========
-        async function acceptAndNext() {
-            if (activeCitationIndex < 0) return;
-            
-            const cite = currentCitations[activeCitationIndex];
-            const selectedOption = cite.options?.[selectedOptionIndex];
-            
-            // Mark as accepted locally
-            cite.accepted = true;
-            cite.selected_option = selectedOptionIndex;
-            
-            // Save to backend
             try {
                 const response = await fetch('/api/accept-reference', {
                     method: 'POST',
@@ -841,60 +796,292 @@
                     body: JSON.stringify({
                         session_id: currentSessionId,
                         citation_id: cite.id || cite.note_id,
-                        selected_option: selectedOptionIndex,
+                        selected_option: 1,
                         style: currentStyle
                     })
                 });
                 
                 const data = await response.json();
-                
                 if (data.success && data.formatted) {
                     cite.formatted = data.formatted;
+                    document.getElementById('ad-final-textarea').value = data.formatted;
+                    document.getElementById('ad-final-textarea').placeholder = 'Auto-resolved citation will appear here...';
+                }
+            } catch (error) {
+                console.error('Format error:', error);
+            }
+        }
+        
+        // ========== RENDER ALTERNATIVES (Author-Date Mode) ==========
+        function adRenderAlternatives(cite) {
+            const container = document.getElementById('ad-alternatives-list');
+            const options = cite.options || [];
+            
+            // Skip the first option (Keep Original) - we have a button for that
+            const alternatives = options.slice(1);
+            
+            if (alternatives.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-8 text-gray-400 bg-white rounded-xl border border-gray-200">
+                        <i class="fas fa-search text-2xl mb-2 opacity-30"></i>
+                        <p class="text-sm">No alternatives found</p>
+                        <p class="text-xs mt-1">Edit the citation manually above</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = '';
+            alternatives.forEach((opt, idx) => {
+                // Build author string
+                const authors = opt.authors?.length > 0 
+                    ? opt.authors.slice(0, 3).join(', ') + (opt.authors.length > 3 ? ' et al.' : '')
+                    : '';
+                
+                // Build source badge
+                const sourceBadge = opt.source
+                    ? `<span class="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">${escapeHtml(opt.source)}</span>`
+                    : '';
+                
+                // The actual option index is idx + 1 (since we skipped Keep Original)
+                const optionIndex = idx + 1;
+                
+                html += `
+                    <div onclick="adSelectAlternative(${optionIndex})" 
+                         class="p-4 bg-white rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 cursor-pointer transition-all">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded badge-${opt.citation_type || 'unknown'}">${(opt.citation_type || 'Unknown').toUpperCase()}</span>
+                                ${sourceBadge}
+                            </div>
+                            ${opt.year ? `<span class="text-xs text-gray-500">${escapeHtml(opt.year)}</span>` : ''}
+                        </div>
+                        <p class="text-sm font-medium text-gray-800 mb-1">${escapeHtml(opt.title || 'Untitled')}</p>
+                        ${authors ? `<p class="text-xs text-gray-500">${escapeHtml(authors)}</p>` : ''}
+                        ${opt.journal ? `<p class="text-xs text-gray-400 italic mt-1">${escapeHtml(opt.journal)}</p>` : ''}
+                        ${opt.publisher ? `<p class="text-xs text-gray-400 mt-1">${escapeHtml(opt.publisher)}</p>` : ''}
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        // ========== SELECT ALTERNATIVE (Author-Date Mode) ==========
+        async function adSelectAlternative(optionIndex) {
+            if (activeCitationIndex < 0) return;
+            
+            const cite = currentCitations[activeCitationIndex];
+            
+            // Format the selected option and put it in the textarea
+            try {
+                const response = await fetch('/api/accept-reference', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        citation_id: cite.id || cite.note_id,
+                        selected_option: optionIndex,
+                        style: currentStyle
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success && data.formatted) {
+                    document.getElementById('ad-final-textarea').value = data.formatted;
+                }
+            } catch (error) {
+                console.error('Format alternative error:', error);
+            }
+        }
+        
+        // ========== KEEP ORIGINAL (Author-Date Mode) ==========
+        function adKeepOriginal() {
+            if (activeCitationIndex < 0) return;
+            
+            const cite = currentCitations[activeCitationIndex];
+            document.getElementById('ad-final-textarea').value = cite.original || '';
+        }
+        
+        // ========== COPY TO CLIPBOARD (Author-Date Mode) ==========
+        function adCopyToClipboard() {
+            const textarea = document.getElementById('ad-final-textarea');
+            navigator.clipboard.writeText(textarea.value).then(() => {
+                // Brief visual feedback
+                const btn = event.currentTarget;
+                const icon = btn.querySelector('i');
+                icon.classList.remove('fa-copy');
+                icon.classList.add('fa-check', 'text-green-500');
+                setTimeout(() => {
+                    icon.classList.remove('fa-check', 'text-green-500');
+                    icon.classList.add('fa-copy');
+                }, 1500);
+            });
+        }
+        
+        // ========== REFRESH ALTERNATIVES (Author-Date Mode) ==========
+        async function adRefreshAlternatives() {
+            if (activeCitationIndex < 0) return;
+            
+            const cite = currentCitations[activeCitationIndex];
+            const container = document.getElementById('ad-alternatives-list');
+            
+            container.innerHTML = `
+                <div class="flex items-center justify-center py-8 text-gray-400 bg-white rounded-xl border border-gray-200">
+                    <div class="w-5 h-5 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mr-3"></div>
+                    Searching databases...
+                </div>
+            `;
+            
+            try {
+                const response = await fetch('/api/cite/multiple', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        query: cite.original, 
+                        style: currentStyle, 
+                        limit: 5 
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.results && data.results.length > 0) {
+                    // Store fresh alternatives
+                    window.adFreshAlternatives = data.results;
+                    
+                    container.innerHTML = data.results.map((r, i) => `
+                        <div onclick="adSelectFreshAlternative(${i})" 
+                             class="p-4 bg-white rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50 cursor-pointer transition-all">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded badge-${r.type || 'unknown'}">${(r.type || 'Unknown').toUpperCase()}</span>
+                                <span class="text-xs text-gray-400">${r.source || ''}</span>
+                            </div>
+                            <p class="text-sm text-gray-700 leading-relaxed">${escapeHtml(r.citation)}</p>
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = `
+                        <div class="text-center py-8 text-gray-400 bg-white rounded-xl border border-gray-200">
+                            <i class="fas fa-search text-2xl mb-2 opacity-30"></i>
+                            <p class="text-sm">No alternatives found</p>
+                            <p class="text-xs mt-1">Edit the citation manually above</p>
+                        </div>
+                    `;
+                }
+            } catch (err) {
+                console.error('Refresh error:', err);
+                container.innerHTML = `
+                    <div class="text-center py-8 text-red-400 bg-white rounded-xl border border-red-200">
+                        <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+                        <p class="text-sm">Search failed</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Select a fresh alternative from refresh results
+        function adSelectFreshAlternative(idx) {
+            if (window.adFreshAlternatives && window.adFreshAlternatives[idx]) {
+                document.getElementById('ad-final-textarea').value = window.adFreshAlternatives[idx].citation;
+            }
+        }
+        
+        // ========== COMMIT CHANGE (Author-Date Mode) ==========
+        let adSaveInProgress = false;
+        
+        async function adCommitChange() {
+            if (activeCitationIndex < 0 || !currentSessionId) {
+                alert('No citation selected');
+                return;
+            }
+            
+            // Prevent concurrent saves
+            if (adSaveInProgress) {
+                console.log('[adCommitChange] Blocked - save already in progress');
+                return;
+            }
+            adSaveInProgress = true;
+            
+            const cite = currentCitations[activeCitationIndex];
+            const newText = document.getElementById('ad-final-textarea').value;
+            
+            const btn = document.getElementById('ad-commit-btn');
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto"></div>';
+            btn.disabled = true;
+            
+            try {
+                // Use legacy format - send the formatted text directly
+                const response = await fetch('/api/accept-reference', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        reference_id: cite.id || cite.note_id,
+                        formatted: newText
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Update local state
+                    cite.formatted = newText;
+                    cite.accepted = true;
+                    
+                    // Update status badge
+                    document.getElementById('ad-status-badge').textContent = '(saved ✓)';
+                    document.getElementById('ad-status-badge').className = 'text-[10px] text-green-600 font-medium';
+                    
+                    // Update list
+                    renderCitationList();
+                    updateAcceptedCount();
+                    updateProgressBadge();
+                    
+                    // Show success briefly, then move to next
+                    btn.innerHTML = '<i class="fas fa-check"></i> Saved!';
+                    btn.classList.remove('from-blue-600', 'to-indigo-600');
+                    btn.classList.add('from-green-600', 'to-emerald-600');
+                    
+                    setTimeout(() => {
+                        btn.innerHTML = originalHtml;
+                        btn.classList.remove('from-green-600', 'to-emerald-600');
+                        btn.classList.add('from-blue-600', 'to-indigo-600');
+                        btn.disabled = false;
+                        adSaveInProgress = false;
+                        
+                        // Check if all done
+                        const allAccepted = currentCitations.every(c => c.accepted);
+                        if (allAccepted) {
+                            showSuccessPanel();
+                        } else {
+                            // Move to next unaccepted
+                            const nextUnaccepted = currentCitations.findIndex((c, i) => i > activeCitationIndex && !c.accepted);
+                            if (nextUnaccepted !== -1) {
+                                selectCitation(nextUnaccepted);
+                            }
+                        }
+                    }, 800);
+                    
+                } else {
+                    throw new Error(data.error || 'Save failed');
                 }
                 
             } catch (error) {
-                console.error('Accept error:', error);
-                // Continue anyway - we'll try to recover during finalize
-            }
-            
-            // Update list
-            renderCitationList();
-            updateAcceptedCount();
-            updateProgressBadge();
-            
-            // Move to next unaccepted, or show success
-            const nextUnaccepted = currentCitations.findIndex((c, i) => i > activeCitationIndex && !c.accepted);
-            
-            if (nextUnaccepted !== -1) {
-                selectCitation(nextUnaccepted);
-            } else {
-                // Check if all are accepted
-                const allAccepted = currentCitations.every(c => c.accepted);
-                if (allAccepted) {
-                    showSuccessPanel();
-                } else {
-                    // Find first unaccepted
-                    const firstUnaccepted = currentCitations.findIndex(c => !c.accepted);
-                    if (firstUnaccepted !== -1) {
-                        selectCitation(firstUnaccepted);
-                    } else {
-                        showSuccessPanel();
-                    }
-                }
+                console.error('Save error:', error);
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+                adSaveInProgress = false;
+                alert('Error saving: ' + error.message);
             }
         }
         
-        // ========== NAVIGATION ==========
-        function prevCitation() {
-            if (activeCitationIndex > 0) {
-                selectCitation(activeCitationIndex - 1);
-            }
-        }
-        
-        function nextCitation() {
-            if (activeCitationIndex < currentCitations.length - 1) {
-                // Auto-accept current before moving
-                acceptAndNext();
+        // ========== NAVIGATION (Author-Date Mode) ==========
+        function adNavigate(delta) {
+            const newIndex = activeCitationIndex + delta;
+            if (newIndex >= 0 && newIndex < currentCitations.length) {
+                selectCitation(newIndex);
             }
         }
         
@@ -922,9 +1109,12 @@
             document.getElementById('panel-success').classList.remove('hidden');
             document.getElementById('download-area').classList.remove('hidden');
             
-            const accepted = currentCitations.filter(c => c.accepted && c.selected_option !== 0).length;
+            // Count citations that were actually changed (formatted differs from original)
+            const changedCount = currentCitations.filter(c => 
+                c.accepted && c.formatted && c.formatted !== c.original
+            ).length;
             document.getElementById('final-total').textContent = currentCitations.length;
-            document.getElementById('final-accepted').textContent = accepted;
+            document.getElementById('final-accepted').textContent = changedCount;
         }
         
         // ========== FOOTNOTE MODE FUNCTIONS ==========
@@ -1343,6 +1533,7 @@
             fnSuccessCount = 0;
             fnJustSaved = false;  // Bug #2 fix: Reset flag
             fnSaveInProgress = false;  // Bug #2 fix: Reset flag
+            adSaveInProgress = false;  // Reset author-date save flag
             
             document.getElementById('file-input').value = '';
             document.getElementById('file-info').classList.add('hidden');

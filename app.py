@@ -52,6 +52,7 @@ from werkzeug.utils import secure_filename
 from unified_router import get_citation, get_multiple_citations, get_parenthetical_options, get_parenthetical_metadata
 from formatters.base import get_formatter
 from document_processor import process_document
+from audit_log import audit, AuditEvent
 from processors.topic_extractor import get_document_context
 from processors.document_metadata import export_cache_to_csv
 
@@ -207,6 +208,12 @@ class SessionManager:
             self._save_session(session_id)
             self._maybe_cleanup()
         
+        # Audit log
+        audit.log_request_event(
+            event_type=AuditEvent.SESSION_CREATED,
+            session_id=session_id
+        )
+        
         return session_id
     
     def get(self, session_id: str) -> dict:
@@ -272,6 +279,13 @@ class SessionManager:
             if session_id in self._sessions:
                 del self._sessions[session_id]
                 self._delete_session_file(session_id)
+                
+                # Audit log
+                audit.log_event(
+                    event_type=AuditEvent.SESSION_DELETED,
+                    session_id=session_id
+                )
+                
                 return True
             return False
     
@@ -295,6 +309,12 @@ class SessionManager:
         for sid in expired:
             del self._sessions[sid]
             self._delete_session_file(sid)
+            
+            # Audit log expired session
+            audit.log_event(
+                event_type=AuditEvent.SESSION_EXPIRED,
+                session_id=sid
+            )
         
         if expired:
             print(f"[SessionManager] Cleaned up {len(expired)} expired sessions")
@@ -691,10 +711,21 @@ def process_doc():
             }), 400
         
         if not allowed_file(file.filename):
+            # Audit log security event
+            audit.log_request_event(
+                event_type=AuditEvent.SECURITY_INVALID_FILE,
+                details={'filename': secure_filename(file.filename)}
+            )
             return jsonify({
                 'success': False,
                 'error': 'Only .docx files are supported'
             }), 400
+        
+        # Audit log document upload
+        audit.log_request_event(
+            event_type=AuditEvent.DOCUMENT_UPLOAD,
+            details={'filename': secure_filename(file.filename)}
+        )
         
         # Start tracking costs for this document
         from cost_tracker import start_document_tracking
@@ -761,6 +792,18 @@ def process_doc():
         from cost_tracker import finish_document_tracking
         doc_cost_summary = finish_document_tracking()
         
+        # Audit log document processed
+        audit.log_request_event(
+            event_type=AuditEvent.DOCUMENT_PROCESSED,
+            session_id=session_id,
+            details={
+                'filename': secure_filename(file.filename),
+                'citation_count': len(results),
+                'success_count': success_count,
+                'failure_count': len(results) - success_count
+            }
+        )
+        
         return jsonify({
             'success': True,
             'session_id': session_id,
@@ -793,6 +836,12 @@ def download(session_id: str):
         session_data = sessions.get(session_id)
         
         if not session_data:
+            # Audit log invalid session
+            audit.log_request_event(
+                event_type=AuditEvent.SECURITY_INVALID_SESSION,
+                session_id=session_id,
+                details={'reason': 'not_found_or_expired'}
+            )
             return jsonify({
                 'success': False,
                 'error': 'Session not found or expired'
@@ -806,6 +855,13 @@ def download(session_id: str):
                 'success': False,
                 'error': 'Processed document not found'
             }), 404
+        
+        # Audit log document download
+        audit.log_request_event(
+            event_type=AuditEvent.DOCUMENT_DOWNLOAD,
+            session_id=session_id,
+            details={'filename': filename, 'size_bytes': len(processed_doc)}
+        )
         
         from io import BytesIO
         buffer = BytesIO(processed_doc)
@@ -2200,6 +2256,12 @@ def admin_email_costs():
     """
     from email_service import ADMIN_SECRET, send_cost_report
     
+    # Audit log admin access attempt
+    audit.log_request_event(
+        event_type=AuditEvent.ADMIN_ACCESS_ATTEMPT,
+        details={'endpoint': '/admin/email-costs'}
+    )
+    
     # Check for secret key
     provided_key = request.args.get('key', '')
     
@@ -2210,10 +2272,21 @@ def admin_email_costs():
         }), 500
     
     if not provided_key or provided_key != ADMIN_SECRET:
+        # Audit log denied access
+        audit.log_request_event(
+            event_type=AuditEvent.ADMIN_ACCESS_DENIED,
+            details={'endpoint': '/admin/email-costs', 'reason': 'invalid_key'}
+        )
         return jsonify({
             'success': False,
             'error': 'Invalid or missing key'
         }), 403
+    
+    # Audit log cost report request
+    audit.log_request_event(
+        event_type=AuditEvent.ADMIN_COST_REPORT,
+        details={'endpoint': '/admin/email-costs'}
+    )
     
     # Send the report
     success = send_cost_report()

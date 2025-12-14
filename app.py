@@ -835,6 +835,7 @@ def export_metadata(session_id: str):
     allowing users to download a spreadsheet of all citation data.
     
     Added: 2025-12-14 (V4.1 - Embedded Metadata Cache)
+    Updated: 2025-12-14 (V4.2 - Support author-date mode)
     """
     print(f"[API] export-metadata called for session {session_id[:8]}...")
     
@@ -850,31 +851,112 @@ def export_metadata(session_id: str):
             }), 404
         
         print(f"[API] Session keys: {list(session_data.keys())}")
-        metadata_cache = session_data.get('metadata_cache')
-        print(f"[API] metadata_cache exists: {metadata_cache is not None}")
-        print(f"[API] metadata_cache type: {type(metadata_cache)}")
         
-        if not metadata_cache:
-            print(f"[API] No metadata_cache in session")
-            return jsonify({
-                'success': False,
-                'error': 'No metadata cache found for this session'
-            }), 404
+        # Check mode - handle author-date differently
+        mode = session_data.get('mode', 'footnote')
+        print(f"[API] Session mode: {mode}")
         
-        cache_size = metadata_cache.size()
-        print(f"[API] metadata_cache size: {cache_size}")
-        
-        if cache_size == 0:
-            print(f"[API] metadata_cache is empty")
-            return jsonify({
-                'success': False,
-                'error': 'Metadata cache is empty'
-            }), 404
-        
-        # Generate CSV
-        print(f"[API] Generating CSV...")
-        csv_content = export_cache_to_csv(metadata_cache)
-        print(f"[API] CSV content length: {len(csv_content)} chars")
+        if mode == 'author-date':
+            # Build CSV from citations and accepted_references
+            citations = session_data.get('citations', [])
+            accepted_refs = session_data.get('accepted_references', {})
+            
+            if not citations:
+                return jsonify({
+                    'success': False,
+                    'error': 'No citations found for this session'
+                }), 404
+            
+            # Build CSV content for author-date mode
+            import csv
+            from io import StringIO
+            
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Header row
+            writer.writerow([
+                'Original', 'Formatted', 'Title', 'Authors', 'Year', 
+                'Journal', 'Publisher', 'Volume', 'Issue', 'Pages', 
+                'DOI', 'URL', 'Type', 'Source'
+            ])
+            
+            # Data rows
+            for cite in citations:
+                cite_id = str(cite.get('id') or cite.get('note_id', ''))
+                original = cite.get('original', '')
+                
+                # Get formatted text from accepted_references or citation
+                formatted = ''
+                if cite_id in accepted_refs:
+                    formatted = accepted_refs[cite_id].get('formatted', '')
+                elif cite.get('formatted'):
+                    formatted = cite.get('formatted', '')
+                
+                # Get metadata from the selected/first option
+                options = cite.get('options', [])
+                selected_idx = cite.get('selected_option', 1)
+                
+                # Get the non-original option if available
+                meta_option = None
+                if len(options) > 1 and selected_idx > 0 and selected_idx < len(options):
+                    meta_option = options[selected_idx]
+                elif len(options) > 1:
+                    meta_option = options[1]  # First AI result
+                
+                if meta_option and not meta_option.get('is_original'):
+                    writer.writerow([
+                        original,
+                        formatted,
+                        meta_option.get('title', ''),
+                        '; '.join(meta_option.get('authors', [])),
+                        meta_option.get('year', ''),
+                        meta_option.get('journal', ''),
+                        meta_option.get('publisher', ''),
+                        meta_option.get('volume', ''),
+                        meta_option.get('issue', ''),
+                        meta_option.get('pages', ''),
+                        meta_option.get('doi', ''),
+                        meta_option.get('url', ''),
+                        meta_option.get('citation_type', ''),
+                        meta_option.get('source', '')
+                    ])
+                else:
+                    # No metadata available, just export original and formatted
+                    writer.writerow([
+                        original, formatted, '', '', '', '', '', '', '', '', '', '', '', ''
+                    ])
+            
+            csv_content = output.getvalue()
+            print(f"[API] Author-date CSV content length: {len(csv_content)} chars")
+            
+        else:
+            # Footnote mode - use existing metadata_cache logic
+            metadata_cache = session_data.get('metadata_cache')
+            print(f"[API] metadata_cache exists: {metadata_cache is not None}")
+            print(f"[API] metadata_cache type: {type(metadata_cache)}")
+            
+            if not metadata_cache:
+                print(f"[API] No metadata_cache in session")
+                return jsonify({
+                    'success': False,
+                    'error': 'No metadata cache found for this session'
+                }), 404
+            
+            cache_size = metadata_cache.size()
+            print(f"[API] metadata_cache size: {cache_size}")
+            
+            if cache_size == 0:
+                print(f"[API] metadata_cache is empty")
+                return jsonify({
+                    'success': False,
+                    'error': 'Metadata cache is empty'
+                }), 404
+            
+            # Generate CSV
+            print(f"[API] Generating CSV...")
+            csv_content = export_cache_to_csv(metadata_cache)
+            print(f"[API] CSV content length: {len(csv_content)} chars")
         
         # Get filename for export
         original_filename = session_data.get('filename', 'document')

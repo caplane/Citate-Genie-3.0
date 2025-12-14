@@ -30,6 +30,13 @@ from io import BytesIO
 
 from models import normalize_doi
 
+# Embedded metadata cache (added 2025-12-14)
+from processors.document_metadata import (
+    CitationMetadataCache,
+    load_cache_from_docx,
+    save_cache_to_docx,
+)
+
 
 # =============================================================================
 # IBID DETECTION AND HANDLING
@@ -1116,6 +1123,7 @@ def process_document(
     Also handles:
     - Explicit ibid references (user typed "ibid" or "ibid., 45")
     - Repetitive URLs (same URL as previous note → ibid)
+    - Embedded metadata cache for repeated processing (V4.1)
     
     Args:
         file_bytes: The document as bytes
@@ -1123,7 +1131,8 @@ def process_document(
         add_links: Whether to make URLs clickable
         
     Returns:
-        Tuple of (processed_document_bytes, results_list)
+        Tuple of (processed_document_bytes, results_list, metadata_cache)
+        The metadata_cache is included for potential CSV export.
     """
     # Import here to avoid circular imports
     from unified_router import get_citation
@@ -1134,6 +1143,12 @@ def process_document(
     NOTE_TIMEOUT = 8  # seconds per note
     
     results = []
+    
+    # Load embedded metadata cache from document (V4.1)
+    # This allows subsequent processing runs to skip API calls for known citations
+    metadata_cache = load_cache_from_docx(file_bytes)
+    cache_hits_before = metadata_cache.size()
+    print(f"[process_document] Loaded metadata cache with {cache_hits_before} existing citations")
     
     # Initialize citation history for ibid and short form tracking
     history = CitationHistory()
@@ -1174,9 +1189,9 @@ def process_document(
     
     # Helper to call get_citation with timeout
     def get_citation_with_timeout(text: str, style: str, context: str = "", timeout: int = NOTE_TIMEOUT):
-        """Call get_citation with a timeout wrapper."""
+        """Call get_citation with a timeout wrapper. Uses metadata_cache from outer scope."""
         with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(get_citation, text, style, context)
+            future = executor.submit(get_citation, text, style, context, metadata_cache)
             try:
                 return future.result(timeout=timeout)
             except FuturesTimeout:
@@ -1355,10 +1370,20 @@ def process_document(
     if add_links:
         doc_buffer = LinkActivator.process(doc_buffer)
     
+    # Get document bytes
+    doc_bytes = doc_buffer.read()
+    
+    # Embed updated metadata cache into document (V4.1)
+    cache_hits_after = metadata_cache.size()
+    new_citations_cached = cache_hits_after - cache_hits_before
+    print(f"[process_document] Cache: {cache_hits_before} existing + {new_citations_cached} new = {cache_hits_after} total")
+    
+    doc_bytes = save_cache_to_docx(doc_bytes, metadata_cache)
+    
     # Cleanup
     processor.cleanup()
     
-    return doc_buffer.read(), results
+    return doc_bytes, results, metadata_cache
 
 
 # =============================================================================

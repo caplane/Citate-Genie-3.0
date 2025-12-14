@@ -48,6 +48,9 @@
         .badge-journal { background: #d1fae5; color: #065f46; }
         .badge-book { background: #dbeafe; color: #1e40af; }
         .badge-medical { background: #fce7f3; color: #9d174d; }
+        .badge-url { background: #e0f2fe; color: #0369a1; }
+        .badge-newspaper { background: #fef9c3; color: #854d0e; }
+        .badge-government { background: #f3e8ff; color: #7c3aed; }
         .badge-unknown { background: #f1f5f9; color: #475569; }
         
         /* Status indicators */
@@ -696,6 +699,16 @@
                     statusClass += ' active';
                 }
                 
+                // Check if this is a URL citation
+                const isUrlCitation = cite.is_url || false;
+                const urlIndicator = isUrlCitation ? '<span class="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-2">URL</span>' : '';
+                
+                // For URLs, truncate display to make it readable
+                let displayOriginal = cite.original || '';
+                if (isUrlCitation && displayOriginal.length > 50) {
+                    displayOriginal = displayOriginal.substring(0, 47) + '...';
+                }
+                
                 html += `
                     <div class="citation-item ${statusClass}" onclick="selectCitation(${idx})" id="cite-${idx}">
                         <div class="flex items-start justify-between gap-2">
@@ -703,10 +716,13 @@
                                 <div class="flex items-center gap-2 mb-1">
                                     <span class="text-xs font-bold text-gray-400">#${idx + 1}</span>
                                     ${statusIcon}
+                                    ${urlIndicator}
                                 </div>
-                                <p class="text-sm text-gray-800 truncate font-medium">${escapeHtml(cite.original || '')}</p>
+                                <p class="text-sm text-gray-800 truncate font-medium">${escapeHtml(displayOriginal)}</p>
                                 ${isAccepted && cite.formatted ? `
                                     <p class="text-xs text-green-600 mt-1 truncate">✓ ${escapeHtml(truncate(cite.formatted, 50))}</p>
+                                ` : isUrlCitation && cite.parenthetical ? `
+                                    <p class="text-xs text-blue-600 mt-1">→ ${escapeHtml(cite.parenthetical)}</p>
                                 ` : `
                                     <p class="text-xs text-gray-400 mt-1">${cite.options?.length || 0} option${cite.options?.length !== 1 ? 's' : ''} found</p>
                                 `}
@@ -742,11 +758,24 @@
             // Update editor header
             document.getElementById('editor-citation-num').textContent = `#${idx + 1}`;
             document.getElementById('editor-position').textContent = `${idx + 1} of ${currentCitations.length}`;
-            document.getElementById('original-citation-text').textContent = cite.original || '(Unknown)';
+            
+            // For URL citations, show the URL and the parenthetical it will become
+            const isUrlCitation = cite.is_url || false;
+            const originalText = cite.original || '(Unknown)';
+            
+            if (isUrlCitation) {
+                // Show truncated URL with parenthetical preview
+                const displayUrl = originalText.length > 60 ? originalText.substring(0, 57) + '...' : originalText;
+                document.getElementById('original-citation-text').innerHTML = 
+                    `<span class="text-blue-600">${escapeHtml(displayUrl)}</span>` +
+                    (cite.parenthetical ? `<br><span class="text-sm text-gray-600">→ Will become: <strong>${escapeHtml(cite.parenthetical)}</strong></span>` : '');
+            } else {
+                document.getElementById('original-citation-text').textContent = originalText;
+            }
             
             // Update type badge
             const typeBadge = document.getElementById('ad-type-badge');
-            const citationType = cite.options?.[1]?.citation_type || 'unknown';
+            const citationType = isUrlCitation ? 'url' : (cite.options?.[1]?.citation_type || 'unknown');
             typeBadge.textContent = citationType.toUpperCase();
             typeBadge.className = `text-[10px] font-bold uppercase px-2 py-0.5 rounded badge-${citationType}`;
             
@@ -755,6 +784,9 @@
             if (cite.accepted) {
                 statusBadge.textContent = '(previously saved — edit to change)';
                 statusBadge.className = 'text-[10px] text-green-600 font-medium';
+            } else if (isUrlCitation) {
+                statusBadge.textContent = '(URL citation — review and accept)';
+                statusBadge.className = 'text-[10px] text-blue-500';
             } else {
                 statusBadge.textContent = '(auto-resolved — edit or select alternative below)';
                 statusBadge.className = 'text-[10px] text-gray-500';
@@ -1012,15 +1044,24 @@
             btn.disabled = true;
             
             try {
-                // Use legacy format - send the formatted text directly
+                // Build request body
+                const requestBody = {
+                    session_id: currentSessionId,
+                    reference_id: cite.id || cite.note_id,
+                    formatted: newText
+                };
+                
+                // For URL citations, include additional data for body replacement
+                if (cite.is_url) {
+                    requestBody.is_url = true;
+                    requestBody.original_url = cite.original_url || cite.original;
+                    requestBody.parenthetical = cite.parenthetical || '';
+                }
+                
                 const response = await fetch('/api/accept-reference', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        session_id: currentSessionId,
-                        reference_id: cite.id || cite.note_id,
-                        formatted: newText
-                    })
+                    body: JSON.stringify(requestBody)
                 });
                 
                 const data = await response.json();

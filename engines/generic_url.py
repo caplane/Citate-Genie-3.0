@@ -1037,6 +1037,7 @@ class GenericURLEngine(SearchEngine):
         - Very short strings (likely abbreviations like 'hlr', 'nyt')
         - All-lowercase strings without spaces (likely handles)
         - Common publication abbreviations
+        - Law review abbreviation patterns (XxxLRev, XxxLJ, etc.)
         """
         if not name:
             return False
@@ -1055,9 +1056,30 @@ class GenericURLEngine(SearchEngine):
             'theatlantic', 'newyorker', 'economist', 'guardian',
             'reuters', 'apnews', 'bbc', 'cnn', 'npr', 'pbs',
             'harvardlawreview', 'yalelawjournal', 'stanfordlawreview',
+            # Common law review abbreviations
+            'harvlrev', 'yaleljforum', 'stanfordlrev', 'columbialrev',
+            'michlrev', 'texaslrev', 'virginialrev', 'pennlrev',
+            'cornelllrev', 'dukelj', 'georgetownlj', 'naborelj',
         }
         if name.lower().replace('_', '').replace('-', '') in site_handles:
             return False
+        
+        # Pattern detection for law review / journal abbreviations
+        # Matches: HarvLRev, YaleLJ, StanfordLRev, TexasLRev, etc.
+        name_lower = name.lower()
+        if re.search(r'l\.?rev$|l\.?j$|lawrev$|lawj$|ljournal$', name_lower):
+            return False
+        
+        # Pattern for magazine/news abbreviations ending in common suffixes
+        # Matches: TheAtlantic, NewYorker (no spaces, proper case)
+        if ' ' not in name and len(name) > 6:
+            # Single word with no spaces that looks like a publication name
+            # (multiple capital letters = likely abbreviation/brand)
+            capitals = sum(1 for c in name if c.isupper())
+            if capitals >= 2 and not any(c == ' ' for c in name):
+                # Could be "HarvLRev" or "NewYorker" - check for common patterns
+                if re.search(r'(times|post|journal|review|tribune|news|weekly|monthly|daily)$', name_lower):
+                    return False
         
         return True
     
@@ -1330,12 +1352,35 @@ class GenericURLEngine(SearchEngine):
         # Get authors, with organizational fallback
         authors = metadata.get('authors', [])
         
-        # If no individual author found, use organization as author
-        # This handles government agencies, corporations, NGOs, etc.
-        if not authors:
-            org_author = self._get_organizational_author(metadata, url)
-            if org_author:
-                authors = [org_author]
+        # Check if this is a known institutional domain where org should be the author
+        # (regardless of what metadata says - departments/programs shouldn't be authors)
+        org_author = self._get_organizational_author(metadata, url)
+        
+        if org_author:
+            # For institutional domains, ALWAYS use org name, not department/program names
+            # This prevents "Global HIV, Hepatitis and STI Programme" from being author
+            # when it should be "World Health Organization"
+            institutional_domains = self._get_institutional_domains()
+            try:
+                from urllib.parse import urlparse
+                domain = urlparse(url).netloc.lower().replace('www.', '')
+                
+                # Check if this domain (or parent domain) is institutional
+                is_institutional = any(
+                    domain == inst_domain or domain.endswith('.' + inst_domain)
+                    for inst_domain in institutional_domains
+                )
+                
+                if is_institutional:
+                    # Use org name, ignore metadata author
+                    authors = [org_author]
+                elif not authors:
+                    # Fallback: use org if no individual author found
+                    authors = [org_author]
+            except:
+                # On error, use fallback logic
+                if not authors:
+                    authors = [org_author]
         
         # Build base metadata
         result = CitationMetadata(
@@ -1509,6 +1554,55 @@ class GenericURLEngine(SearchEngine):
             return True
         
         return False
+    
+    def _get_institutional_domains(self) -> set:
+        """
+        Return domains where the organization should ALWAYS be the author,
+        regardless of what metadata says about individual departments/programs.
+        
+        For these domains, department names like "Global HIV, Hepatitis and STI Programme"
+        should be ignored in favor of the main org name "World Health Organization".
+        """
+        return {
+            # International organizations (have many programs/departments)
+            'who.int',
+            'worldbank.org',
+            'imf.org',
+            'un.org',
+            'oecd.org',
+            
+            # US Government agencies (have many sub-agencies/offices)
+            'cdc.gov',
+            'nih.gov',
+            'fda.gov',
+            'epa.gov',
+            'state.gov',
+            'treasury.gov',
+            'justice.gov',
+            'hhs.gov',
+            'dhs.gov',
+            'energy.gov',
+            'usda.gov',
+            'commerce.gov',
+            'labor.gov',
+            'va.gov',
+            'gao.gov',
+            
+            # Think tanks / research orgs (staff write under org name)
+            'brookings.edu',
+            'rand.org',
+            'urban.org',
+            'commonwealthfund.org',
+            'kff.org',
+            'pewresearch.org',
+            'cfr.org',
+            'nber.org',
+            
+            # International government
+            'gov.uk',
+            'canada.ca',
+            'europa.eu',
+        }
     
     def _minimal_metadata(self, url: str) -> CitationMetadata:
         """Return minimal metadata when we can't fetch/parse the URL."""

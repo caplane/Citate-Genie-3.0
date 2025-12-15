@@ -200,12 +200,17 @@ class APAFormatter(BaseFormatter):
             - "Last, First" → "Last, F."
             - "Last, First Middle" → "Last, F. M."
             - "Last, F. M." → "Last, F. M." (already correct)
+            - "World Health Organization" → "World Health Organization" (org, no inversion)
             """
             import re
             
             name = name.strip()
             if not name:
                 return ""
+            
+            # Check if this is an organizational author - don't invert
+            if self._is_organizational_author(name):
+                return name
             
             # Check if already in "Last, Initials" format (initials are single letters with periods)
             # Pattern: "LastName, X." or "LastName, X. Y." etc.

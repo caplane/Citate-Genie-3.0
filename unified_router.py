@@ -989,6 +989,43 @@ def _route_url(url: str) -> Optional[CitationMetadata]:
             pass
     
     # ==========================================================================
+    # MAJOR PUBLISHER PII EXTRACTION (Added 2025-12-15)
+    # 
+    # Publishers like Lancet, Elsevier, etc. often block scrapers (403).
+    # But their URLs contain PIIs (Publisher Item Identifiers) that PubMed indexes.
+    # Extract PII from URL pattern and search PubMed.
+    # Example: PIIS0140-6736(51)91311-6 in Lancet URLs
+    # ==========================================================================
+    
+    PUBMED_INDEXED_PUBLISHERS = [
+        'thelancet.com',
+        'sciencedirect.com', 
+        'cell.com',
+        'nejm.org',
+        'jamanetwork.com',
+        'bmj.com',
+    ]
+    
+    url_lower = url.lower()
+    is_pubmed_publisher = any(pub in url_lower for pub in PUBMED_INDEXED_PUBLISHERS)
+    
+    if is_pubmed_publisher:
+        # Try to extract PII from URL (e.g., PIIS0140-6736(51)91311-6)
+        pii_match = re.search(r'PII([A-Z0-9\-\(\)]+)', url, re.IGNORECASE)
+        if pii_match:
+            pii = pii_match.group(1)
+            print(f"[UnifiedRouter] Extracted PII from Lancet/publisher URL: {pii}")
+            try:
+                # Search PubMed with the PII
+                result = _pubmed.search(pii)
+                if result and result.has_minimum_data():
+                    result.url = url
+                    print(f"[UnifiedRouter] ✓ PubMed found via PII: '{result.title[:50] if result.title else 'N/A'}'")
+                    return result
+            except Exception as e:
+                print(f"[UnifiedRouter] PubMed PII search failed: {e}")
+    
+    # ==========================================================================
     # FETCH-FIRST STRATEGY (Updated 2025-12-15)
     # 
     # GenericURLEngine fetches actual page content and extracts real metadata

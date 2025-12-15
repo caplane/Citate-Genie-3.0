@@ -932,18 +932,17 @@ def _route_url(url: str) -> Optional[CitationMetadata]:
     """
     Route URL-based queries.
     
-    Priority:
-    1. Extract DOI from URL → Crossref lookup
-    2. Academic publisher URL → Crossref search
-    3. Medical URL → PubMed
-    4. Academic AI URL (law reviews, think tanks, etc.) → ChatGPT lookup
-    5. Newspaper/Magazine URL → ChatGPT lookup
-    6. Generic URL fetch → Extract metadata from HTML (Open Graph, JSON-LD, etc.)
-    7. Fallback → Basic URL metadata (just the URL itself)
+    Priority (FETCH-FIRST strategy - updated 2025-12-15):
+    1. Extract DOI from URL → Crossref lookup (authoritative)
+    2. Academic publisher URL → Crossref search (authoritative)
+    3. Medical URL → PubMed (authoritative)
+    4. Fetch URL via GenericURLEngine → Extract real metadata from HTML
+    5. AI fallback WITH VERIFICATION → Only if HTML fails, and must verify against DBs
+    6. Fallback → Return partial HTML data or URL-only
     
-    Updated 2025-12-14: Expanded to ACADEMIC_AI_DOMAINS for all non-DOI academic sources
-    Updated 2025-12-13: Added ChatGPT-first strategy for newspaper/magazine URLs
-    Updated 2025-12-13: Added GenericURLEngine for proper HTML metadata extraction
+    CRITICAL: AI cannot browse URLs via API. Previous "ChatGPT-first" strategy
+    caused hallucinations (e.g., wrong authors for correct titles). Now we
+    fetch actual page content first, and only use AI as verified fallback.
     """
     # Check for DOI in URL
     doi = extract_doi_from_url(url)
@@ -990,56 +989,74 @@ def _route_url(url: str) -> Optional[CitationMetadata]:
             pass
     
     # ==========================================================================
-    # ACADEMIC AI URLs: ChatGPT-first strategy
-    # Law reviews, think tanks, humanities journals, working papers, etc.
-    # These sources often lack DOIs or aren't in standard databases
+    # FETCH-FIRST STRATEGY (Updated 2025-12-15)
+    # 
+    # GenericURLEngine fetches actual page content and extracts real metadata
+    # from HTML (Open Graph, JSON-LD, meta tags). This prevents hallucination.
+    # AI is only used as fallback when HTML extraction fails, and AI results
+    # MUST be verified against databases before being accepted.
     # ==========================================================================
-    if _is_academic_ai_url(url) and ACADEMIC_AI_AVAILABLE:
-        try:
-            print(f"[UnifiedRouter] Academic AI URL detected - trying ChatGPT first: {url[:60]}...")
-            result = lookup_academic_url(url)
-            if result and result.has_minimum_data():
-                result.url = url
-                print(f"[UnifiedRouter] ✓ ChatGPT extracted academic: '{result.title[:50] if result.title else 'N/A'}...'")
-                return result
-            else:
-                print(f"[UnifiedRouter] ChatGPT returned incomplete data, falling back to HTML scraping")
-        except Exception as e:
-            print(f"[UnifiedRouter] ChatGPT academic lookup failed: {e}, falling back to HTML scraping")
     
-    # ==========================================================================
-    # NEWSPAPER/MAGAZINE URLs: ChatGPT-first strategy
-    # ChatGPT can access paywalled content and extract metadata reliably
-    # ==========================================================================
-    if _is_newspaper_url(url) and NEWSPAPER_AI_AVAILABLE:
-        try:
-            print(f"[UnifiedRouter] Newspaper URL detected - trying ChatGPT first: {url[:60]}...")
-            result = lookup_newspaper_url(url)
-            if result and result.has_minimum_data():
-                result.url = url
-                print(f"[UnifiedRouter] ✓ ChatGPT extracted newspaper: '{result.title[:50] if result.title else 'N/A'}...'")
-                return result
-            else:
-                print(f"[UnifiedRouter] ChatGPT returned incomplete data, falling back to HTML scraping")
-        except Exception as e:
-            print(f"[UnifiedRouter] ChatGPT newspaper lookup failed: {e}, falling back to HTML scraping")
-    
-    # Use GenericURLEngine to fetch and extract metadata from HTML
-    # This handles newspapers, magazines, blogs, and any other URL
+    html_result = None
     try:
         print(f"[UnifiedRouter] Fetching URL metadata: {url[:60]}...")
-        result = _generic_url.fetch_by_url(url)
-        if result and result.has_minimum_data():
-            result.url = url
-            print(f"[UnifiedRouter] GenericURL extracted: title='{result.title[:50] if result.title else 'N/A'}...'")
-            return result
-        elif result:
-            # Got some data but not "minimum" - still use it with URL fallback
-            result.url = url
-            print(f"[UnifiedRouter] GenericURL partial data: {result}")
-            return result
+        html_result = _generic_url.fetch_by_url(url)
+        if html_result and html_result.has_minimum_data():
+            # Check if we have authors - if yes, this is good enough
+            if html_result.authors:
+                html_result.url = url
+                print(f"[UnifiedRouter] ✓ HTML extracted: '{html_result.title[:50] if html_result.title else 'N/A'}' by {html_result.authors}")
+                return html_result
+            else:
+                print(f"[UnifiedRouter] HTML got title but no authors, will try to enhance")
     except Exception as e:
         print(f"[UnifiedRouter] GenericURL error: {e}")
+    
+    # ==========================================================================
+    # AI FALLBACK WITH VERIFICATION
+    # 
+    # If HTML extraction failed or is incomplete, try AI - but ONLY accept
+    # results that can be verified against academic databases. This prevents
+    # hallucinated citations like wrong authors for correct titles.
+    # ==========================================================================
+    
+    # Try AI for academic URLs (law reviews, think tanks, etc.)
+    if _is_academic_ai_url(url) and ACADEMIC_AI_AVAILABLE:
+        try:
+            print(f"[UnifiedRouter] Trying AI lookup with verification: {url[:60]}...")
+            result = lookup_academic_url(url, verify=True)
+            if result and result.has_minimum_data():
+                result.url = url
+                print(f"[UnifiedRouter] ✓ AI+verified: '{result.title[:50] if result.title else 'N/A'}' by {result.authors}")
+                return result
+            else:
+                print(f"[UnifiedRouter] AI lookup failed verification or returned incomplete data")
+        except Exception as e:
+            print(f"[UnifiedRouter] AI academic lookup failed: {e}")
+    
+    # Try AI for newspaper URLs
+    if _is_newspaper_url(url) and NEWSPAPER_AI_AVAILABLE:
+        try:
+            print(f"[UnifiedRouter] Trying AI newspaper lookup with verification: {url[:60]}...")
+            result = lookup_newspaper_url(url, verify=True)
+            if result and result.has_minimum_data():
+                result.url = url
+                print(f"[UnifiedRouter] ✓ AI+verified newspaper: '{result.title[:50] if result.title else 'N/A'}'")
+                return result
+            else:
+                print(f"[UnifiedRouter] AI newspaper lookup failed verification")
+        except Exception as e:
+            print(f"[UnifiedRouter] AI newspaper lookup failed: {e}")
+    
+    # ==========================================================================
+    # FALLBACK: Return HTML result even if incomplete, or URL-only
+    # ==========================================================================
+    
+    if html_result:
+        # Return whatever we got from HTML, even if incomplete
+        html_result.url = url
+        print(f"[UnifiedRouter] Returning partial HTML data: title='{html_result.title[:50] if html_result.title else 'N/A'}'")
+        return html_result
     
     # Final fallback - just return the URL as citation
     print(f"[UnifiedRouter] URL fallback - no metadata extracted for: {url[:60]}...")

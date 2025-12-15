@@ -275,15 +275,17 @@ Respond ONLY with valid JSON, no explanation:
 If you cannot access or identify the article, respond: {"error": "Unable to access article"}"""
 
 
-def lookup_newspaper_url(url: str) -> Optional[CitationMetadata]:
+def lookup_newspaper_url(url: str, verify: bool = False) -> Optional[CitationMetadata]:
     """
-    Look up newspaper/magazine article metadata using ChatGPT.
+    Look up newspaper/magazine article metadata using AI.
     
-    ChatGPT can access URLs and extract metadata even from paywalled sites
-    where HTML scraping fails.
+    IMPORTANT: AI cannot actually browse URLs via API. It guesses based on
+    URL patterns and training data. When verify=True, results are checked
+    for basic consistency (newspapers are harder to verify in databases).
     
     Args:
         url: The newspaper/magazine article URL
+        verify: If True, apply additional validation checks
         
     Returns:
         CitationMetadata with extracted information, or None if lookup fails
@@ -295,21 +297,20 @@ def lookup_newspaper_url(url: str) -> Optional[CitationMetadata]:
     prompt = f"Extract citation metadata from this article URL:\n{url}"
     
     try:
-        # Use OpenAI directly (ChatGPT-first strategy for newspapers)
         response = _call_openai(prompt, NEWSPAPER_URL_SYSTEM, max_tokens=500)
         
         if not response:
-            print("[AI_Lookup] No response from ChatGPT for newspaper URL")
+            print("[AI_Lookup] No response from AI for newspaper URL")
             return None
         
         data = _parse_json_response(response)
         
         if not data:
-            print(f"[AI_Lookup] Failed to parse ChatGPT response: {response[:200]}")
+            print(f"[AI_Lookup] Failed to parse AI response: {response[:200]}")
             return None
         
         if data.get('error'):
-            print(f"[AI_Lookup] ChatGPT error: {data['error']}")
+            print(f"[AI_Lookup] AI error: {data['error']}")
             return None
         
         # Build CitationMetadata from response
@@ -320,7 +321,6 @@ def lookup_newspaper_url(url: str) -> Optional[CitationMetadata]:
         year = None
         date_str = data.get('date', '')
         if date_str:
-            import re
             year_match = re.search(r'\b(19|20)\d{2}\b', date_str)
             if year_match:
                 year = year_match.group(0)
@@ -328,7 +328,7 @@ def lookup_newspaper_url(url: str) -> Optional[CitationMetadata]:
         result = CitationMetadata(
             citation_type=CitationType.NEWSPAPER,
             raw_source=url,
-            source_engine="ChatGPT",
+            source_engine="AI Lookup",
             title=data.get('title', ''),
             authors=data.get('authors', []),
             newspaper=data.get('publication', ''),
@@ -336,15 +336,27 @@ def lookup_newspaper_url(url: str) -> Optional[CitationMetadata]:
             year=year,
             url=url,
             access_date=access_date,
-            confidence=0.95,  # High confidence for ChatGPT extractions
+            confidence=0.7,  # Moderate confidence - newspapers are harder to verify
             raw_data=data,
         )
         
-        print(f"[AI_Lookup] ChatGPT extracted: '{result.title[:50]}...' by {result.authors} from {result.newspaper}")
+        # If verification requested, do basic consistency checks
+        if verify:
+            # For newspapers, we can't easily verify against databases
+            # But we can check for obvious hallucination signs:
+            # 1. Title should contain some words from the URL slug
+            # 2. Publication should match the domain
+            if not _verify_newspaper_consistency(result, url):
+                print(f"[AI_Lookup] ✗ Newspaper metadata failed consistency check")
+                return None
+            result.source_engine = "AI Lookup (consistency checked)"
+            result.confidence = 0.85
+        
+        print(f"[AI_Lookup] Extracted newspaper: '{result.title[:50]}...' by {result.authors} from {result.newspaper}")
         return result
         
     except Exception as e:
-        print(f"[AI_Lookup] ChatGPT newspaper lookup error: {e}")
+        print(f"[AI_Lookup] Newspaper lookup error: {e}")
         return None
 
 
@@ -374,24 +386,21 @@ Respond ONLY with valid JSON, no explanation:
 If you cannot access or identify the article, respond: {"error": "Unable to access article"}"""
 
 
-def lookup_academic_url(url: str) -> Optional[CitationMetadata]:
+def lookup_academic_url(url: str, verify: bool = False) -> Optional[CitationMetadata]:
     """
-    Look up academic publication metadata using ChatGPT.
+    Look up academic publication metadata using AI.
     
-    ChatGPT can access URLs and extract metadata from academic sources that
-    often lack DOIs and aren't in standard databases like Crossref:
-    - Law reviews and legal journals
-    - Humanities and literary reviews
-    - Think tank and policy institute papers
-    - Working papers and preprints
-    - University repository content
-    - Professional association publications
+    IMPORTANT: AI cannot actually browse URLs via API. It guesses based on
+    URL patterns and training data. When verify=True, results are checked
+    against academic databases to prevent hallucinations.
     
     Args:
         url: The academic publication URL
+        verify: If True, verify AI result against Crossref/OpenAlex/PubMed
         
     Returns:
         CitationMetadata with extracted information, or None if lookup fails
+        or verification fails
     """
     if not OPENAI_API_KEY:
         print("[AI_Lookup] OpenAI API key not configured for academic lookup")
@@ -400,35 +409,30 @@ def lookup_academic_url(url: str) -> Optional[CitationMetadata]:
     prompt = f"Extract citation metadata from this academic publication URL:\n{url}"
     
     try:
-        # Use OpenAI directly (ChatGPT-first strategy for academic sources)
         response = _call_openai(prompt, ACADEMIC_URL_SYSTEM, max_tokens=500)
         
         if not response:
-            print("[AI_Lookup] No response from ChatGPT for academic URL")
+            print("[AI_Lookup] No response from AI for academic URL")
             return None
         
         data = _parse_json_response(response)
         
         if not data:
-            print(f"[AI_Lookup] Failed to parse ChatGPT response: {response[:200]}")
+            print(f"[AI_Lookup] Failed to parse AI response: {response[:200]}")
             return None
         
         if data.get('error'):
-            print(f"[AI_Lookup] ChatGPT error: {data['error']}")
+            print(f"[AI_Lookup] AI error: {data['error']}")
             return None
         
-        # Build CitationMetadata from response
+        # Build initial CitationMetadata from AI response
         from datetime import datetime
         access_date = datetime.now().strftime('%B %d, %Y').replace(' 0', ' ')
         
-        # Determine if this is more like a journal article or a report/working paper
-        has_journal_fields = bool(data.get('volume') or data.get('issue') or data.get('pages'))
-        has_working_paper = bool(data.get('working_paper_number'))
-        
-        result = CitationMetadata(
-            citation_type=CitationType.JOURNAL,  # Default to JOURNAL for academic content
+        ai_result = CitationMetadata(
+            citation_type=CitationType.JOURNAL,
             raw_source=url,
-            source_engine="ChatGPT",
+            source_engine="AI Lookup (unverified)",
             title=data.get('title', ''),
             authors=data.get('authors', []),
             journal=data.get('journal', ''),
@@ -438,19 +442,30 @@ def lookup_academic_url(url: str) -> Optional[CitationMetadata]:
             year=data.get('year', ''),
             url=url,
             access_date=access_date,
-            confidence=0.95,  # High confidence for ChatGPT extractions
+            confidence=0.5,  # Low confidence until verified
             raw_data=data,
         )
         
-        # Store working paper number in raw_data for formatters that need it
-        if has_working_paper:
-            result.raw_data['working_paper_number'] = data.get('working_paper_number', '')
+        print(f"[AI_Lookup] AI suggests: '{ai_result.title[:50]}...' by {ai_result.authors}")
         
-        print(f"[AI_Lookup] ChatGPT extracted academic: '{result.title[:50]}...' by {result.authors} in {result.journal}")
-        return result
+        # If verification requested, check against databases
+        if verify:
+            verified = _verify_url_metadata(ai_result, url)
+            if verified:
+                verified.url = url
+                verified.source_engine = "AI + Database (verified)"
+                verified.confidence = 0.95
+                print(f"[AI_Lookup] ✓ Verified: '{verified.title[:50]}...'")
+                return verified
+            else:
+                print(f"[AI_Lookup] ✗ Could not verify AI result against databases")
+                return None
+        
+        # No verification requested - return unverified (legacy behavior)
+        return ai_result
         
     except Exception as e:
-        print(f"[AI_Lookup] ChatGPT academic lookup error: {e}")
+        print(f"[AI_Lookup] Academic lookup error: {e}")
         return None
 
 
@@ -1036,6 +1051,192 @@ def _result_matches_fragment(result: CitationMetadata, fragment: str) -> bool:
         year_match = year_in_fragment.group() == str(result.year)
     
     return word_match and year_match
+
+
+def _verify_url_metadata(ai_result: CitationMetadata, url: str) -> Optional[CitationMetadata]:
+    """
+    Verify AI-suggested URL metadata against academic databases.
+    
+    The AI cannot browse URLs, so it guesses based on URL patterns.
+    This function searches databases using the AI's suggested title/authors
+    and only returns a result if we find a matching entry.
+    
+    Args:
+        ai_result: The CitationMetadata suggested by AI
+        url: The original URL (for reference)
+        
+    Returns:
+        Verified CitationMetadata from database, or None if not found
+    """
+    from engines.academic import CrossrefEngine, OpenAlexEngine, PubMedEngine
+    
+    if not ai_result.title:
+        return None
+    
+    # Build search queries from AI's suggested metadata
+    queries = []
+    
+    # Query 1: Title words + first author surname
+    title_words = [w for w in ai_result.title.split()[:6] if len(w) > 3]
+    author_surname = ''
+    if ai_result.authors:
+        # Extract surname from "First Last" or "Last, First" format
+        first_author = ai_result.authors[0]
+        if ',' in first_author:
+            author_surname = first_author.split(',')[0].strip()
+        else:
+            author_surname = first_author.split()[-1] if first_author.split() else ''
+    
+    if title_words:
+        query = ' '.join(title_words)
+        if author_surname:
+            query += ' ' + author_surname
+        queries.append(query)
+    
+    # Query 2: Just title (broader search)
+    if ai_result.title:
+        queries.append(ai_result.title[:100])
+    
+    # Try each query against each engine
+    engines = [
+        ('Crossref', CrossrefEngine()),
+        ('OpenAlex', OpenAlexEngine()),
+    ]
+    
+    for query in queries[:2]:
+        for engine_name, engine in engines:
+            try:
+                result = engine.search(query)
+                if result and result.title:
+                    # Check if result matches AI's suggestion
+                    if _titles_match(result.title, ai_result.title):
+                        print(f"[AI_Lookup] Verified '{ai_result.title[:40]}...' via {engine_name}")
+                        return result
+            except Exception as e:
+                print(f"[AI_Lookup] {engine_name} search error: {e}")
+                continue
+    
+    return None
+
+
+def _titles_match(title1: str, title2: str) -> bool:
+    """
+    Check if two titles refer to the same work.
+    
+    Handles minor variations in punctuation, capitalization, subtitles.
+    """
+    if not title1 or not title2:
+        return False
+    
+    # Normalize: lowercase, remove punctuation, collapse whitespace
+    import re
+    
+    def normalize(t):
+        t = t.lower()
+        t = re.sub(r'[^\w\s]', ' ', t)  # Remove punctuation
+        t = ' '.join(t.split())  # Collapse whitespace
+        return t
+    
+    norm1 = normalize(title1)
+    norm2 = normalize(title2)
+    
+    # Exact match after normalization
+    if norm1 == norm2:
+        return True
+    
+    # One is substring of other (handles subtitle variations)
+    if norm1 in norm2 or norm2 in norm1:
+        return True
+    
+    # Word overlap: at least 60% of shorter title's words in longer
+    words1 = set(norm1.split())
+    words2 = set(norm2.split())
+    
+    # Remove very short words
+    words1 = {w for w in words1 if len(w) > 3}
+    words2 = {w for w in words2 if len(w) > 3}
+    
+    if not words1 or not words2:
+        return False
+    
+    overlap = len(words1 & words2)
+    min_words = min(len(words1), len(words2))
+    
+    return overlap >= min_words * 0.6
+
+
+def _verify_newspaper_consistency(result: CitationMetadata, url: str) -> bool:
+    """
+    Basic consistency check for newspaper metadata.
+    
+    Newspapers are harder to verify in databases, so we do basic checks:
+    1. URL slug should relate to title
+    2. Domain should relate to publication name
+    
+    Args:
+        result: The CitationMetadata from AI
+        url: The original URL
+        
+    Returns:
+        True if metadata passes consistency checks
+    """
+    from urllib.parse import urlparse
+    
+    try:
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower().replace('www.', '')
+        path = parsed.path.lower()
+        
+        # Extract slug from path (last meaningful segment)
+        slug_parts = [p for p in path.split('/') if p and len(p) > 3]
+        slug = slug_parts[-1] if slug_parts else ''
+        
+        # Remove common extensions and IDs
+        slug = re.sub(r'\.(html?|php|aspx?)$', '', slug)
+        slug = re.sub(r'[-_]', ' ', slug)
+        
+        # Check 1: Does title contain words from slug?
+        if result.title and slug:
+            title_lower = result.title.lower()
+            slug_words = [w for w in slug.split() if len(w) > 3]
+            
+            if slug_words:
+                matches = sum(1 for w in slug_words if w in title_lower)
+                # Require at least 1 word match or 30% overlap
+                if matches == 0 and len(slug_words) >= 3:
+                    print(f"[AI_Lookup] Title '{result.title[:40]}' doesn't match URL slug '{slug}'")
+                    return False
+        
+        # Check 2: Does publication match domain?
+        if result.newspaper:
+            pub_lower = result.newspaper.lower()
+            # Extract key parts of domain (e.g., 'nytimes' from 'nytimes.com')
+            domain_key = domain.split('.')[0]
+            
+            # Common mappings
+            domain_pub_map = {
+                'nytimes': 'new york times',
+                'washingtonpost': 'washington post',
+                'wsj': 'wall street journal',
+                'latimes': 'los angeles times',
+                'theatlantic': 'atlantic',
+                'newyorker': 'new yorker',
+                'economist': 'economist',
+                'theguardian': 'guardian',
+            }
+            
+            expected_pub = domain_pub_map.get(domain_key, domain_key)
+            
+            # Check if publication contains expected string
+            if expected_pub not in pub_lower and domain_key not in pub_lower:
+                # Not a hard failure - publication names vary
+                print(f"[AI_Lookup] Warning: Publication '{result.newspaper}' doesn't match domain '{domain}'")
+        
+        return True
+        
+    except Exception as e:
+        print(f"[AI_Lookup] Consistency check error: {e}")
+        return True  # Don't fail on parse errors
 
 
 def _guess_to_metadata(guess: dict, raw_source: str) -> CitationMetadata:

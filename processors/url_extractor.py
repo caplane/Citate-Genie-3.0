@@ -18,8 +18,10 @@ import xml.etree.ElementTree as ET
 
 
 # URL pattern - matches http/https URLs
+# Note: We allow parentheses in URLs (common in DOIs, Lancet article IDs, etc.)
+# The clean_url() function will handle unbalanced trailing parens
 URL_PATTERN = re.compile(
-    r'https?://[^\s<>"\')\]]+',
+    r'https?://[^\s<>"\'\]]+',
     re.IGNORECASE
 )
 

@@ -52,8 +52,6 @@ from werkzeug.utils import secure_filename
 from unified_router import get_citation, get_multiple_citations, get_parenthetical_options, get_parenthetical_metadata
 from formatters.base import get_formatter
 from document_processor import process_document
-from audit_log import audit, AuditEvent
-from encryption import get_encryptor
 from processors.topic_extractor import get_document_context
 from processors.document_metadata import export_cache_to_csv
 
@@ -127,7 +125,7 @@ class SessionManager:
         return self._storage_dir / f"{session_id}.pkl"
     
     def _save_session(self, session_id: str):
-        """Save a single session to disk with encryption and file locking."""
+        """Save a single session to disk with file locking."""
         if not self._persistence_available:
             return
         try:
@@ -135,18 +133,15 @@ class SessionManager:
             session = self._sessions.get(session_id)
             if session:
                 session_file = self._get_session_file(session_id)
+                # Write to temp file first, then rename (atomic on POSIX)
                 temp_file = session_file.with_suffix('.tmp')
-                
-                # Serialize then encrypt
-                raw_bytes = pickle.dumps(session)
-                encrypted_bytes = get_encryptor().encrypt(session_id, raw_bytes)
-                
                 with open(temp_file, 'wb') as f:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                    f.write(encrypted_bytes)
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # Exclusive lock
+                    pickle.dump(session, f)
                     f.flush()
-                    os.fsync(f.fileno())
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                    os.fsync(f.fileno())  # Force write to disk
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # Unlock
+                # Atomic rename
                 temp_file.rename(session_file)
         except Exception as e:
             print(f"[SessionManager] Failed to save session {session_id[:8]}: {e}")
@@ -163,33 +158,19 @@ class SessionManager:
             print(f"[SessionManager] Failed to delete session file {session_id[:8]}: {e}")
     
     def _load_sessions(self):
-        """Load all sessions from disk on startup (with decryption)."""
+        """Load all sessions from disk on startup."""
         if not self._persistence_available:
             return
         
         loaded = 0
         expired = 0
-        failed = 0
         current_time = datetime.now()
         
         try:
             for session_file in self._storage_dir.glob("*.pkl"):
                 try:
-                    session_id = session_file.stem
-                    
                     with open(session_file, 'rb') as f:
-                        encrypted_bytes = f.read()
-                    
-                    # Decrypt then deserialize
-                    decrypted_bytes = get_encryptor().decrypt(session_id, encrypted_bytes)
-                    
-                    if decrypted_bytes is None:
-                        print(f"[SessionManager] Could not decrypt {session_file.name}, removing")
-                        session_file.unlink()
-                        failed += 1
-                        continue
-                    
-                    session = pickle.loads(decrypted_bytes)
+                        session = pickle.load(f)
                     
                     # Check if expired
                     if current_time > session.get('expires_at', current_time):
@@ -197,18 +178,19 @@ class SessionManager:
                         expired += 1
                         continue
                     
+                    session_id = session_file.stem
                     self._sessions[session_id] = session
                     loaded += 1
                 except Exception as e:
                     print(f"[SessionManager] Failed to load {session_file.name}: {e}")
+                    # Remove corrupted file
                     try:
                         session_file.unlink()
                     except:
                         pass
-                    failed += 1
             
-            if loaded > 0 or expired > 0 or failed > 0:
-                print(f"[SessionManager] Loaded {loaded} sessions, {expired} expired, {failed} failed")
+            if loaded > 0 or expired > 0:
+                print(f"[SessionManager] Loaded {loaded} sessions, cleaned {expired} expired")
         except Exception as e:
             print(f"[SessionManager] Failed to load sessions: {e}")
     
@@ -225,12 +207,6 @@ class SessionManager:
             self._save_session(session_id)
             self._maybe_cleanup()
         
-        # Audit log
-        audit.log_request_event(
-            event_type=AuditEvent.SESSION_CREATED,
-            session_id=session_id
-        )
-        
         return session_id
     
     def get(self, session_id: str) -> dict:
@@ -244,12 +220,9 @@ class SessionManager:
                 if session_file.exists():
                     try:
                         with open(session_file, 'rb') as f:
-                            encrypted_bytes = f.read()
-                        decrypted_bytes = get_encryptor().decrypt(session_id, encrypted_bytes)
-                        if decrypted_bytes:
-                            session = pickle.loads(decrypted_bytes)
-                            self._sessions[session_id] = session
-                            print(f"[SessionManager] Recovered session {session_id[:8]} from disk")
+                            session = pickle.load(f)
+                        self._sessions[session_id] = session
+                        print(f"[SessionManager] Recovered session {session_id[:8]} from disk")
                     except Exception as e:
                         print(f"[SessionManager] Failed to recover session {session_id[:8]}: {e}")
             
@@ -275,12 +248,9 @@ class SessionManager:
                 if session_file.exists():
                     try:
                         with open(session_file, 'rb') as f:
-                            encrypted_bytes = f.read()
-                        decrypted_bytes = get_encryptor().decrypt(session_id, encrypted_bytes)
-                        if decrypted_bytes:
-                            session = pickle.loads(decrypted_bytes)
-                            self._sessions[session_id] = session
-                            print(f"[SessionManager] Recovered session {session_id[:8]} from disk for set()")
+                            session = pickle.load(f)
+                        self._sessions[session_id] = session
+                        print(f"[SessionManager] Recovered session {session_id[:8]} from disk for set()")
                     except Exception as e:
                         print(f"[SessionManager] Failed to recover session {session_id[:8]}: {e}")
             
@@ -302,13 +272,6 @@ class SessionManager:
             if session_id in self._sessions:
                 del self._sessions[session_id]
                 self._delete_session_file(session_id)
-                
-                # Audit log
-                audit.log_event(
-                    event_type=AuditEvent.SESSION_DELETED,
-                    session_id=session_id
-                )
-                
                 return True
             return False
     
@@ -332,12 +295,6 @@ class SessionManager:
         for sid in expired:
             del self._sessions[sid]
             self._delete_session_file(sid)
-            
-            # Audit log expired session
-            audit.log_event(
-                event_type=AuditEvent.SESSION_EXPIRED,
-                session_id=sid
-            )
         
         if expired:
             print(f"[SessionManager] Cleaned up {len(expired)} expired sessions")
@@ -734,21 +691,10 @@ def process_doc():
             }), 400
         
         if not allowed_file(file.filename):
-            # Audit log security event
-            audit.log_request_event(
-                event_type=AuditEvent.SECURITY_INVALID_FILE,
-                details={'filename': secure_filename(file.filename)}
-            )
             return jsonify({
                 'success': False,
                 'error': 'Only .docx files are supported'
             }), 400
-        
-        # Audit log document upload
-        audit.log_request_event(
-            event_type=AuditEvent.DOCUMENT_UPLOAD,
-            details={'filename': secure_filename(file.filename)}
-        )
         
         # Start tracking costs for this document
         from cost_tracker import start_document_tracking
@@ -815,18 +761,6 @@ def process_doc():
         from cost_tracker import finish_document_tracking
         doc_cost_summary = finish_document_tracking()
         
-        # Audit log document processed
-        audit.log_request_event(
-            event_type=AuditEvent.DOCUMENT_PROCESSED,
-            session_id=session_id,
-            details={
-                'filename': secure_filename(file.filename),
-                'citation_count': len(results),
-                'success_count': success_count,
-                'failure_count': len(results) - success_count
-            }
-        )
-        
         return jsonify({
             'success': True,
             'session_id': session_id,
@@ -859,12 +793,6 @@ def download(session_id: str):
         session_data = sessions.get(session_id)
         
         if not session_data:
-            # Audit log invalid session
-            audit.log_request_event(
-                event_type=AuditEvent.SECURITY_INVALID_SESSION,
-                session_id=session_id,
-                details={'reason': 'not_found_or_expired'}
-            )
             return jsonify({
                 'success': False,
                 'error': 'Session not found or expired'
@@ -878,13 +806,6 @@ def download(session_id: str):
                 'success': False,
                 'error': 'Processed document not found'
             }), 404
-        
-        # Audit log document download
-        audit.log_request_event(
-            event_type=AuditEvent.DOCUMENT_DOWNLOAD,
-            session_id=session_id,
-            details={'filename': filename, 'size_bytes': len(processed_doc)}
-        )
         
         from io import BytesIO
         buffer = BytesIO(processed_doc)
@@ -1967,180 +1888,107 @@ def finalize_author_date():
             
             doc_path = os.path.join(temp_dir, 'word', 'document.xml')
             
-            # Register namespaces
-            namespaces = {
-                'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
-                'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
-            }
-            for prefix, uri in namespaces.items():
-                ET.register_namespace(prefix, uri)
+            # Read original XML as string to preserve all namespaces
+            # (ElementTree loses namespaces on write, corrupting the document)
+            with open(doc_path, 'r', encoding='utf-8') as f:
+                xml_content = f.read()
             
-            tree = ET.parse(doc_path)
-            root = tree.getroot()
-            body = root.find('.//w:body', namespaces)
+            w_ns = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
             
             # =================================================================
             # STEP 1: Replace URLs in document body with parentheticals
+            # (Using string replacement to preserve all namespaces)
             # =================================================================
-            if url_replacements and body is not None:
-                # Build a map of URL -> parenthetical
-                url_to_paren = {r['url']: r['parenthetical'] for r in url_replacements}
-                
-                # Process each paragraph
-                for para in body.findall('.//w:p', namespaces):
-                    # Get all text elements in this paragraph
-                    text_elements = para.findall('.//w:t', namespaces)
+            if url_replacements:
+                for replacement in url_replacements:
+                    url = replacement['url']
+                    parenthetical = replacement['parenthetical']
                     
-                    # Join text to find URLs
-                    full_text = ''.join(t.text or '' for t in text_elements)
-                    
-                    # Find all URLs in this paragraph that need replacement
-                    urls_in_para = []
-                    for url in url_to_paren.keys():
-                        if url in full_text:
-                            start_idx = full_text.find(url)
-                            urls_in_para.append({
-                                'url': url,
-                                'start': start_idx,
-                                'end': start_idx + len(url),
-                                'parenthetical': url_to_paren[url]
-                            })
-                    
-                    if not urls_in_para:
-                        continue
-                    
-                    # Sort by position
-                    urls_in_para.sort(key=lambda x: x['start'])
-                    
-                    # Check for adjacent URLs (within 5 characters of each other)
-                    # and merge them with semicolons
-                    merged_groups = []
-                    current_group = [urls_in_para[0]]
-                    
-                    for i in range(1, len(urls_in_para)):
-                        prev = urls_in_para[i-1]
-                        curr = urls_in_para[i]
-                        
-                        # If current URL starts within 20 chars of previous URL end
-                        # (allowing for ". " or ", " or " and " between)
-                        if curr['start'] - prev['end'] <= 20:
-                            current_group.append(curr)
-                        else:
-                            merged_groups.append(current_group)
-                            current_group = [curr]
-                    
-                    merged_groups.append(current_group)
-                    
-                    # Build replacement text for the entire paragraph
-                    new_text = full_text
-                    
-                    # Process groups in reverse order to maintain positions
-                    for group in reversed(merged_groups):
-                        if len(group) == 1:
-                            # Single URL - simple replacement
-                            url_info = group[0]
-                            new_text = new_text[:url_info['start']] + url_info['parenthetical'] + new_text[url_info['end']:]
-                        else:
-                            # Multiple adjacent URLs - combine with semicolons
-                            # Remove the inner parts of parentheticals and join
-                            parentheticals = [g['parenthetical'] for g in group]
-                            # Strip outer parens and join with semicolons
-                            inner_parts = [p.strip('()') for p in parentheticals]
-                            combined = '(' + '; '.join(inner_parts) + ')'
-                            
-                            # Replace from first URL start to last URL end
-                            start = group[0]['start']
-                            end = group[-1]['end']
-                            
-                            # Also remove any separators between URLs
-                            new_text = new_text[:start] + combined + new_text[end:]
-                    
-                    # Now update the XML with new text
-                    # Simple approach: clear all text elements and set first one
-                    if text_elements and new_text != full_text:
-                        # Clear all text elements
-                        for t in text_elements[1:]:
-                            t.text = ''
-                        # Set first element to new text
-                        text_elements[0].text = new_text
-                        
-                        print(f"[API] Replaced URLs in paragraph: {full_text[:50]}... -> {new_text[:50]}...")
+                    # Simple string replacement for URLs in the XML
+                    if url in xml_content:
+                        xml_content = xml_content.replace(url, parenthetical)
+                        print(f"[API] Replaced URL: {url[:50]}... -> {parenthetical}")
             
             # =================================================================
-            # STEP 2: Add References section
+            # STEP 2: Build References section as XML string
             # =================================================================
             
-            if body is not None:
-                sect_pr = body.find('w:sectPr', namespaces)
+            # Build References heading
+            refs_xml = f'''
+  <w:p xmlns:w="{w_ns}">
+    <w:pPr>
+      <w:pStyle w:val="Heading1"/>
+    </w:pPr>
+    <w:r>
+      <w:t>References</w:t>
+    </w:r>
+  </w:p>
+  <w:p xmlns:w="{w_ns}"/>'''
+            
+            # Sort references alphabetically
+            sorted_refs = sorted(references, key=lambda r: r.get('formatted', '').lower())
+            
+            # Add each reference
+            import html
+            import re as re_module
+            
+            for ref in sorted_refs:
+                formatted = ref.get('formatted', ref.get('original', ''))
+                if not formatted:
+                    continue
                 
-                # Create References heading
-                heading_para = ET.Element(f"{{{namespaces['w']}}}p")
-                heading_pPr = ET.SubElement(heading_para, f"{{{namespaces['w']}}}pPr")
-                heading_style = ET.SubElement(heading_pPr, f"{{{namespaces['w']}}}pStyle")
-                heading_style.set(f"{{{namespaces['w']}}}val", "Heading1")
-                heading_run = ET.SubElement(heading_para, f"{{{namespaces['w']}}}r")
-                heading_text = ET.SubElement(heading_run, f"{{{namespaces['w']}}}t")
-                heading_text.text = "References"
+                # Unescape HTML entities first
+                formatted = html.unescape(formatted)
                 
-                # Add blank line
-                blank_para = ET.Element(f"{{{namespaces['w']}}}p")
+                # Parse for italics and build runs
+                parts = re_module.split(r'(<i>.*?</i>)', formatted)
+                runs_xml = ''
                 
-                if sect_pr is not None:
-                    idx = list(body).index(sect_pr)
-                    body.insert(idx, heading_para)
-                    body.insert(idx + 1, blank_para)
-                else:
-                    body.append(heading_para)
-                    body.append(blank_para)
-                
-                # Sort references alphabetically by formatted text
-                sorted_refs = sorted(references, key=lambda r: r.get('formatted', '').lower())
-                
-                # Add each reference
-                for ref in sorted_refs:
-                    formatted = ref.get('formatted', ref.get('original', ''))
-                    if not formatted:
+                for part in parts:
+                    if not part:
                         continue
                     
-                    ref_para = ET.Element(f"{{{namespaces['w']}}}p")
-                    
-                    # Hanging indent style
-                    ref_pPr = ET.SubElement(ref_para, f"{{{namespaces['w']}}}pPr")
-                    ref_ind = ET.SubElement(ref_pPr, f"{{{namespaces['w']}}}ind")
-                    ref_ind.set(f"{{{namespaces['w']}}}left", "720")
-                    ref_ind.set(f"{{{namespaces['w']}}}hanging", "720")
-                    
-                    # Parse for italics
-                    import re
-                    import html
-                    parts = re.split(r'(<i>.*?</i>)', html.unescape(formatted))
-                    
-                    for part in parts:
-                        if not part:
-                            continue
-                        
-                        run = ET.SubElement(ref_para, f"{{{namespaces['w']}}}r")
-                        
-                        italic_match = re.match(r'<i>(.*?)</i>', part)
-                        if italic_match:
-                            rPr = ET.SubElement(run, f"{{{namespaces['w']}}}rPr")
-                            ET.SubElement(rPr, f"{{{namespaces['w']}}}i")
-                            text_content = italic_match.group(1)
-                        else:
-                            text_content = part
-                        
-                        t = ET.SubElement(run, f"{{{namespaces['w']}}}t")
-                        t.text = text_content
-                        t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
-                    
-                    if sect_pr is not None:
-                        idx = list(body).index(sect_pr)
-                        body.insert(idx, ref_para)
+                    italic_match = re_module.match(r'<i>(.*?)</i>', part)
+                    if italic_match:
+                        text_content = italic_match.group(1)
+                        # Escape for XML
+                        text_content = text_content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                        runs_xml += f'<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve">{text_content}</w:t></w:r>'
                     else:
-                        body.append(ref_para)
+                        text_content = part
+                        # Escape for XML
+                        text_content = text_content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                        runs_xml += f'<w:r><w:t xml:space="preserve">{text_content}</w:t></w:r>'
+                
+                # Reference paragraph with hanging indent
+                refs_xml += f'''
+  <w:p xmlns:w="{w_ns}">
+    <w:pPr>
+      <w:ind w:left="720" w:hanging="720"/>
+    </w:pPr>
+    {runs_xml}
+  </w:p>'''
             
-            # Write modified document
-            tree.write(doc_path, encoding='UTF-8', xml_declaration=True)
+            # =================================================================
+            # STEP 3: Insert References before </w:body> or <w:sectPr>
+            # =================================================================
+            
+            # Try to find sectPr (section properties - usually at end of body)
+            sect_match = re_module.search(r'<w:sectPr[^>]*/?>', xml_content)
+            if sect_match:
+                insert_pos = sect_match.start()
+                xml_content = xml_content[:insert_pos] + refs_xml + '\n  ' + xml_content[insert_pos:]
+            else:
+                # Insert before </w:body>
+                body_end = xml_content.rfind('</w:body>')
+                if body_end != -1:
+                    xml_content = xml_content[:body_end] + refs_xml + '\n  ' + xml_content[body_end:]
+            
+            # =================================================================
+            # STEP 4: Write modified XML (preserves all original namespaces)
+            # =================================================================
+            with open(doc_path, 'w', encoding='utf-8') as f:
+                f.write(xml_content)
             
             # Repackage docx
             output_buffer = BytesIO()
@@ -2279,12 +2127,6 @@ def admin_email_costs():
     """
     from email_service import ADMIN_SECRET, send_cost_report
     
-    # Audit log admin access attempt
-    audit.log_request_event(
-        event_type=AuditEvent.ADMIN_ACCESS_ATTEMPT,
-        details={'endpoint': '/admin/email-costs'}
-    )
-    
     # Check for secret key
     provided_key = request.args.get('key', '')
     
@@ -2295,21 +2137,10 @@ def admin_email_costs():
         }), 500
     
     if not provided_key or provided_key != ADMIN_SECRET:
-        # Audit log denied access
-        audit.log_request_event(
-            event_type=AuditEvent.ADMIN_ACCESS_DENIED,
-            details={'endpoint': '/admin/email-costs', 'reason': 'invalid_key'}
-        )
         return jsonify({
             'success': False,
             'error': 'Invalid or missing key'
         }), 403
-    
-    # Audit log cost report request
-    audit.log_request_event(
-        event_type=AuditEvent.ADMIN_COST_REPORT,
-        details={'endpoint': '/admin/email-costs'}
-    )
     
     # Send the report
     success = send_cost_report()

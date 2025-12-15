@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 from engines.base import SearchEngine
 from models import CitationMetadata, CitationType
 from config import DEFAULT_HEADERS, NEWSPAPER_DOMAINS, GOV_AGENCY_MAP
+from engines.gov_ngo_domains import get_org_author as get_org_author_from_cache
 
 # Try to import BeautifulSoup - it's a common dependency
 try:
@@ -1431,6 +1432,11 @@ class GenericURLEngine(SearchEngine):
             domain = parsed.netloc.lower().replace('www.', '')
         except:
             return None
+        
+        # Priority 0: Check gov_ngo_domains cache (204 orgs, most comprehensive)
+        cached_org = get_org_author_from_cache(url)
+        if cached_org:
+            return cached_org
         
         # Priority 1: Check explicit domain mappings (most accurate)
         # Government agencies

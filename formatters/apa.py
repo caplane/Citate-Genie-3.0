@@ -210,6 +210,7 @@ class APAFormatter(BaseFormatter):
             
             # Check if this is an organizational author - don't invert
             if self._is_organizational_author(name):
+                print(f"[APA] ORG AUTHOR DETECTED: {name}")
                 return name
             
             # Check if already in "Last, Initials" format (initials are single letters with periods)

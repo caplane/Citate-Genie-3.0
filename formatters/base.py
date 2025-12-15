@@ -168,6 +168,47 @@ class BaseFormatter(ABC):
         # Otherwise assume "First Last"
         parts = full_name.split()
         return parts[-1] if parts else ""
+    
+    def _is_organizational_author(self, name: str) -> bool:
+        """
+        Check if a name is an organizational author (should NOT be inverted).
+        
+        Organizational authors like "World Health Organization" should appear
+        verbatim, not be reformatted as "Organization, W. H."
+        
+        Args:
+            name: Author name to check
+            
+        Returns:
+            True if this appears to be an organization name
+        """
+        if not name:
+            return False
+        
+        name_lower = name.lower()
+        
+        # Keywords that indicate organizational authors
+        org_keywords = [
+            # Generic org terms
+            'organization', 'organisation', 'department', 'institute',
+            'institution', 'university', 'college', 'school',
+            'commission', 'committee', 'council', 'board',
+            'agency', 'administration', 'bureau', 'office', 'service',
+            'foundation', 'association', 'society', 'federation',
+            'corporation', 'company', 'group', 'authority',
+            'ministry', 'secretariat', 'directorate',
+            'center', 'centre', 'centers', 'centres',  # CDC, research centers
+            # Government indicators
+            'government', 'federal', 'national', 'state of', 'commonwealth',
+            'united states', 'united nations', 'european',
+            # International bodies
+            'world', 'international', 'global',
+            # Common org name patterns
+            'center for', 'centre for', 'office of', 'bureau of',
+            'department of', 'ministry of', 'council on',
+        ]
+        
+        return any(kw in name_lower for kw in org_keywords)
 
 
 # =============================================================================

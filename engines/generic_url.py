@@ -1141,12 +1141,43 @@ class GenericURLEngine(SearchEngine):
                 break
         
         # Journal/publication name (for academic articles)
-        journal_names = ['citation_journal_title', 'DC.publisher', 'citation_publisher']
+        # Separate journal from publisher - they're different!
+        journal_names = ['citation_journal_title', 'citation_journal_abbrev', 'DC.relation.ispartof']
         for name in journal_names:
             tag = soup.find('meta', attrs={'name': name})
             if tag and tag.get('content'):
-                data['site_name'] = tag['content'].strip()
+                data['journal'] = tag['content'].strip()
                 break
+        
+        # Publisher (separate from journal)
+        publisher_names = ['citation_publisher', 'DC.publisher', 'publisher']
+        for name in publisher_names:
+            tag = soup.find('meta', attrs={'name': name})
+            if tag and tag.get('content'):
+                data['publisher'] = tag['content'].strip()
+                break
+        
+        # Site name fallback (for non-academic or when journal not found)
+        if not data.get('journal'):
+            site_name_tags = ['og:site_name', 'application-name']
+            for name in site_name_tags:
+                tag = soup.find('meta', attrs={'property': name}) or soup.find('meta', attrs={'name': name})
+                if tag and tag.get('content'):
+                    data['site_name'] = tag['content'].strip()
+                    break
+        
+        # DOI extraction from meta tags
+        doi_names = ['citation_doi', 'DC.identifier', 'dc.identifier', 'prism.doi', 'bepress_citation_doi']
+        for name in doi_names:
+            tag = soup.find('meta', attrs={'name': name})
+            if tag and tag.get('content'):
+                content = tag['content'].strip()
+                # Clean DOI - remove prefixes
+                if '10.' in content:
+                    doi_match = re.search(r'(10\.\d{4,}/[^\s]+)', content)
+                    if doi_match:
+                        data['doi'] = doi_match.group(1).rstrip('.,;:)')
+                        break
         
         # Volume, issue, pages (academic)
         vol_tag = soup.find('meta', attrs={'name': 'citation_volume'})
@@ -1443,6 +1474,37 @@ class GenericURLEngine(SearchEngine):
             year_match = re.search(r'\b(19|20)\d{2}\b', metadata['date'])
             if year_match:
                 result.year = year_match.group(0)
+        
+        # ==========================================================================
+        # ACADEMIC METADATA ENHANCEMENT (Added 2025-12-15)
+        # 
+        # Extract and map all available academic metadata from HTML meta tags.
+        # This includes journal name, volume, issue, pages, DOI, and publisher.
+        # "Metadata is gold" - the more we capture, the better the citations.
+        # ==========================================================================
+        
+        # Journal name (from citation_journal_title or site_name)
+        if metadata.get('journal'):
+            result.journal = metadata['journal']
+        elif metadata.get('site_name') and citation_type not in [CitationType.NEWSPAPER, CitationType.GOVERNMENT]:
+            # Use site_name as journal for academic content
+            result.journal = metadata['site_name']
+        
+        # Volume, Issue, Pages
+        if metadata.get('volume'):
+            result.volume = metadata['volume']
+        if metadata.get('issue'):
+            result.issue = metadata['issue']
+        if metadata.get('pages'):
+            result.pages = metadata['pages']
+        
+        # DOI - critical for academic citations
+        if metadata.get('doi'):
+            result.doi = metadata['doi']
+        
+        # Publisher
+        if metadata.get('publisher'):
+            result.publisher = metadata['publisher']
         
         return result
     

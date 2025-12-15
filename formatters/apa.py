@@ -161,14 +161,25 @@ class APAFormatter(BaseFormatter):
         parts = []
         
         if metadata.authors:
-            last_name = self._get_last_name(metadata.authors[0])
-            if len(metadata.authors) == 2:
-                last_name2 = self._get_last_name(metadata.authors[1])
-                parts.append(f"{last_name} & {last_name2}")
-            elif len(metadata.authors) > 2:
-                parts.append(f"{last_name} et al.")
+            first_author = metadata.authors[0]
+            
+            # Check if organizational author - use full name, not "last name"
+            if self._is_organizational_author(first_author):
+                print(f"[APA] ORG AUTHOR in format_short: {first_author}")
+                parts.append(first_author)
             else:
-                parts.append(last_name)
+                last_name = self._get_last_name(first_author)
+                if len(metadata.authors) == 2:
+                    second_author = metadata.authors[1]
+                    if self._is_organizational_author(second_author):
+                        last_name2 = second_author
+                    else:
+                        last_name2 = self._get_last_name(second_author)
+                    parts.append(f"{last_name} & {last_name2}")
+                elif len(metadata.authors) > 2:
+                    parts.append(f"{last_name} et al.")
+                else:
+                    parts.append(last_name)
         
         if metadata.year:
             parts.append(f"({metadata.year})")
@@ -210,7 +221,6 @@ class APAFormatter(BaseFormatter):
             
             # Check if this is an organizational author - don't invert
             if self._is_organizational_author(name):
-                print(f"[APA] ORG AUTHOR DETECTED: {name}")
                 return name
             
             # Check if already in "Last, Initials" format (initials are single letters with periods)

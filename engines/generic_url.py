@@ -27,6 +27,14 @@ from models import CitationMetadata, CitationType
 from config import DEFAULT_HEADERS, NEWSPAPER_DOMAINS, GOV_AGENCY_MAP
 from engines.gov_ngo_domains import get_org_author as get_org_author_from_cache
 
+# Try to import AI org lookup - optional fallback for .org domains
+try:
+    from engines.ai_lookup import lookup_org_name
+    HAS_AI_LOOKUP = True
+except ImportError:
+    HAS_AI_LOOKUP = False
+    lookup_org_name = None
+
 # Try to import BeautifulSoup - it's a common dependency
 try:
     from bs4 import BeautifulSoup
@@ -1353,6 +1361,29 @@ class GenericURLEngine(SearchEngine):
         # Get authors, with organizational fallback
         authors = metadata.get('authors', [])
         
+        # Validate scraped authors - reject date-like or invalid strings
+        def is_valid_author(name: str) -> bool:
+            """Check if a string looks like a valid author name."""
+            if not name or len(name) < 2:
+                return False
+            name = name.strip().rstrip(',').strip()
+            # Reject if it looks like a date (month names, pure numbers)
+            date_patterns = [
+                'january', 'february', 'march', 'april', 'may', 'june',
+                'july', 'august', 'september', 'october', 'november', 'december',
+                'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'
+            ]
+            name_lower = name.lower()
+            if any(name_lower.startswith(p) for p in date_patterns):
+                return False
+            # Reject if mostly numbers
+            if sum(c.isdigit() for c in name) > len(name) / 2:
+                return False
+            return True
+        
+        # Filter out invalid authors
+        authors = [a for a in authors if is_valid_author(a)]
+        
         # Check if this is a known institutional domain where org should be the author
         # (regardless of what metadata says - departments/programs shouldn't be authors)
         org_author = self._get_organizational_author(metadata, url)
@@ -1526,6 +1557,15 @@ class GenericURLEngine(SearchEngine):
         if any(domain.endswith(tld) for tld in ['.gov', '.org', '.edu', '.int']):
             if site_name and len(site_name) > 3:
                 return site_name
+        
+        # Priority 5: AI fallback for .org/.edu domains
+        # Ask AI: "What organization owns this domain?"
+        if HAS_AI_LOOKUP and lookup_org_name:
+            if any(domain.endswith(tld) for tld in ['.org', '.edu']):
+                print(f"[GenericURL] Trying AI lookup for org name: {domain}")
+                ai_org_name = lookup_org_name(domain)
+                if ai_org_name:
+                    return ai_org_name
         
         return None
     

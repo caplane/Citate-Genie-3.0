@@ -1,219 +1,279 @@
 """
-citeflex/engines/base.py
+citeflex/formatters/base.py
 
-Abstract base class for all search engines.
-Each engine must implement the search() method.
+Base formatter class and factory function.
+All style-specific formatters inherit from BaseFormatter.
+
+FIX APPLIED: Consistent period handling across all formatters.
+All format methods now use _ensure_period() to guarantee consistent
+ending punctuation.
 """
 
-import time
 from abc import ABC, abstractmethod
-from typing import Optional, List
-import requests
+from typing import Optional
 
-from models import CitationMetadata, CitationType
-from config import DEFAULT_HEADERS, DEFAULT_TIMEOUT
+from models import CitationMetadata, CitationType, CitationStyle
 
 
-class SearchEngine(ABC):
+class BaseFormatter(ABC):
     """
-    Abstract base class for search engines.
+    Abstract base class for citation formatters.
     
-    All engines must implement:
-    - search(query) -> CitationMetadata or None
+    Each formatter must implement:
+    - format(metadata) -> str: Full citation
+    - format_short(metadata) -> str: Short form citation
     
-    Engines may optionally implement:
-    - search_multiple(query, limit) -> List[CitationMetadata]
-    - get_by_id(id) -> CitationMetadata (for DOI, PMID, ISBN lookup)
+    The base class provides:
+    - format_ibid(): Standard ibid format
+    - _ensure_period(): Consistent ending punctuation
+    - _format_authors(): Common author formatting
     """
     
-    # Override in subclasses
-    name: str = "Base Engine"
-    base_url: str = ""
+    style: CitationStyle = CitationStyle.CHICAGO
     
-    # Rate limit retry settings
-    MAX_RETRIES = 2
-    RETRY_DELAY_BASE = 2  # Base delay in seconds for exponential backoff
+    # ==========================================================================
+    # FIX: Consistent period handling
+    # ==========================================================================
     
-    def __init__(self, api_key: Optional[str] = None, timeout: int = DEFAULT_TIMEOUT):
-        self.api_key = api_key
-        self.timeout = timeout
-        self._session = None
-    
-    @property
-    def session(self) -> requests.Session:
-        """Lazy-loaded requests session with default headers."""
-        if self._session is None:
-            self._session = requests.Session()
-            self._session.headers.update(DEFAULT_HEADERS)
-        return self._session
-    
-    @abstractmethod
-    def search(self, query: str) -> Optional[CitationMetadata]:
+    @staticmethod
+    def _ensure_period(text: str) -> str:
         """
-        Search for a single best-match result.
+        Ensure citation ends with a period.
+        
+        This method guarantees consistent ending punctuation across
+        all formatters, fixing the inconsistency bug where some
+        format_short methods ended with periods and others didn't.
         
         Args:
-            query: Search query string
+            text: Citation text
             
         Returns:
-            CitationMetadata if found, None otherwise
+            Text ending with exactly one period
+        """
+        if not text:
+            return ""
+        
+        text = text.rstrip()
+        
+        # Don't double-punctuate
+        if text.endswith(('.', '?', '!')):
+            return text
+        
+        return text + "."
+    
+    @staticmethod
+    def format_ibid(page: Optional[str] = None) -> str:
+        """
+        Format an ibid reference.
+        
+        Standard across all styles: Ibid. or Ibid., PAGE.
+        
+        Args:
+            page: Optional page number
+            
+        Returns:
+            Formatted ibid string
+        """
+        if page:
+            return f"Ibid., {page}."
+        return "Ibid."
+    
+    @abstractmethod
+    def format(self, metadata: CitationMetadata) -> str:
+        """
+        Format a full citation.
+        
+        Args:
+            metadata: Citation metadata
+            
+        Returns:
+            Formatted citation string (with <i> tags for italics)
         """
         pass
     
-    def search_multiple(self, query: str, limit: int = 5) -> List[CitationMetadata]:
-        """
-        Search for multiple results. Override for engines that support it.
-        Default implementation just returns single result in a list.
-        
-        Args:
-            query: Search query string
-            limit: Maximum results to return
-            
-        Returns:
-            List of CitationMetadata (may be empty)
-        """
-        result = self.search(query)
-        return [result] if result else []
-    
-    def get_by_id(self, identifier: str) -> Optional[CitationMetadata]:
-        """
-        Fetch by direct identifier (DOI, PMID, ISBN, etc.).
-        Override in engines that support direct lookup.
-        
-        Args:
-            identifier: The identifier to look up
-            
-        Returns:
-            CitationMetadata if found, None otherwise
-        """
-        return None
-    
-    def _make_request(
-        self,
-        url: str,
-        params: Optional[dict] = None,
-        headers: Optional[dict] = None,
-        method: str = "GET",
-        retry_count: int = 0
-    ) -> Optional[requests.Response]:
-        """
-        Make an HTTP request with error handling and rate limit retry.
-        
-        Implements exponential backoff for 429 (Too Many Requests) responses.
-        
-        Returns:
-            Response object if successful, None on error
-        """
-        try:
-            merged_headers = dict(DEFAULT_HEADERS)
-            if headers:
-                merged_headers.update(headers)
-            
-            if method.upper() == "GET":
-                response = self.session.get(
-                    url,
-                    params=params,
-                    headers=merged_headers,
-                    timeout=self.timeout
-                )
-            else:
-                response = self.session.post(
-                    url,
-                    json=params,
-                    headers=merged_headers,
-                    timeout=self.timeout
-                )
-            
-            # Handle rate limiting with exponential backoff
-            if response.status_code == 429:
-                if retry_count < self.MAX_RETRIES:
-                    # Get retry delay from header or use exponential backoff
-                    retry_after = response.headers.get('Retry-After')
-                    if retry_after:
-                        try:
-                            delay = int(retry_after)
-                        except ValueError:
-                            delay = self.RETRY_DELAY_BASE * (2 ** retry_count)
-                    else:
-                        delay = self.RETRY_DELAY_BASE * (2 ** retry_count)
-                    
-                    print(f"[{self.name}] Rate limited. Retrying in {delay}s (attempt {retry_count + 1}/{self.MAX_RETRIES})...")
-                    time.sleep(delay)
-                    return self._make_request(url, params, headers, method, retry_count + 1)
-                else:
-                    print(f"[{self.name}] Rate limit exceeded after {self.MAX_RETRIES} retries")
-                    return None
-            
-            response.raise_for_status()
-            return response
-            
-        except requests.Timeout:
-            print(f"[{self.name}] Request timeout after {self.timeout}s")
-            return None
-        except requests.RequestException as e:
-            print(f"[{self.name}] Request error: {e}")
-            return None
-    
-    def _create_metadata(
-        self,
-        citation_type: CitationType,
-        raw_source: str = "",
-        **kwargs
-    ) -> CitationMetadata:
-        """
-        Helper to create CitationMetadata with common fields pre-filled.
-        """
-        return CitationMetadata(
-            citation_type=citation_type,
-            raw_source=raw_source,
-            source_engine=self.name,
-            **kwargs
-        )
-
-
-class MultiAttemptEngine(SearchEngine):
-    """
-    Base class for engines that try multiple search strategies.
-    Subclasses define the attempts, this class orchestrates them.
-    """
-    
     @abstractmethod
-    def get_search_attempts(self, query: str) -> List[dict]:
+    def format_short(self, metadata: CitationMetadata) -> str:
         """
-        Return a list of search attempt configurations.
-        Each dict should have at least 'name' and 'params' keys.
+        Format a short form citation (for subsequent references).
         
-        Example:
-        [
-            {'name': 'phrase', 'params': {'q': f'"{query}"'}},
-            {'name': 'keyword', 'params': {'q': query}},
-            {'name': 'fuzzy', 'params': {'q': f'{query}~'}},
+        Args:
+            metadata: Citation metadata
+            
+        Returns:
+            Formatted short citation string
+        """
+        pass
+    
+    def _format_authors(
+        self,
+        authors: list,
+        max_authors: int = 3,
+        et_al_threshold: int = 3
+    ) -> str:
+        """
+        Format author list according to style conventions.
+        
+        Default behavior (can be overridden):
+        - 1 author: "First Last"
+        - 2 authors: "First Last and First Last"
+        - 3+ authors: "First Last et al."
+        
+        Args:
+            authors: List of author names
+            max_authors: Max authors to list before et al.
+            et_al_threshold: Number of authors that triggers et al.
+            
+        Returns:
+            Formatted author string
+        """
+        if not authors:
+            return ""
+        
+        if len(authors) == 1:
+            return authors[0]
+        
+        if len(authors) == 2:
+            return f"{authors[0]} and {authors[1]}"
+        
+        if len(authors) >= et_al_threshold:
+            return f"{authors[0]} et al."
+        
+        # 3+ but below threshold
+        return ", ".join(authors[:-1]) + f", and {authors[-1]}"
+    
+    def _get_last_name(self, full_name: str) -> str:
+        """
+        Extract last name from full name.
+        
+        Handles:
+        - "First Last" -> "Last"
+        - "First Middle Last" -> "Last"
+        - "Last, First" -> "Last"
+        
+        Args:
+            full_name: Full author name
+            
+        Returns:
+            Last name
+        """
+        if not full_name:
+            return ""
+        
+        full_name = full_name.strip()
+        
+        # Check for "Last, First" format
+        if ',' in full_name:
+            return full_name.split(',')[0].strip()
+        
+        # Otherwise assume "First Last"
+        parts = full_name.split()
+        return parts[-1] if parts else ""
+    
+    def _is_organizational_author(self, name: str) -> bool:
+        """
+        Check if a name is an organizational author (should NOT be inverted).
+        
+        Organizational authors like "World Health Organization" should appear
+        verbatim, not be reformatted as "Organization, W. H."
+        
+        Args:
+            name: Author name to check
+            
+        Returns:
+            True if this appears to be an organization name
+        """
+        if not name:
+            return False
+        
+        name_lower = name.lower()
+        
+        # Keywords that indicate organizational authors
+        org_keywords = [
+            # Generic org terms
+            'organization', 'organisation', 'department', 'institute',
+            'institution', 'university', 'college', 'school',
+            'commission', 'committee', 'council', 'board',
+            'agency', 'administration', 'bureau', 'office', 'service',
+            'foundation', 'association', 'society', 'federation',
+            'corporation', 'company', 'group', 'authority',
+            'ministry', 'secretariat', 'directorate',
+            'center', 'centre', 'centers', 'centres',  # CDC, research centers
+            # Government indicators
+            'government', 'federal', 'national', 'state of', 'commonwealth',
+            'united states', 'united nations', 'european',
+            # International bodies
+            'world', 'international', 'global',
+            # Common org name patterns
+            'center for', 'centre for', 'office of', 'bureau of',
+            'department of', 'ministry of', 'council on',
         ]
-        """
-        pass
-    
-    @abstractmethod
-    def parse_response(self, response: requests.Response, query: str) -> Optional[CitationMetadata]:
-        """Parse a successful response into CitationMetadata."""
-        pass
-    
-    def search(self, query: str) -> Optional[CitationMetadata]:
-        """Execute search attempts in order until one succeeds."""
-        attempts = self.get_search_attempts(query)
         
-        for i, attempt in enumerate(attempts, 1):
-            name = attempt.get('name', f'attempt_{i}')
-            params = attempt.get('params', {})
-            url = attempt.get('url', self.base_url)
-            
-            print(f"[{self.name}] Attempt {i}: {name}...")
-            
-            response = self._make_request(url, params=params)
-            if response:
-                result = self.parse_response(response, query)
-                if result and result.has_minimum_data():
-                    print(f"[{self.name}] Found via {name}")
-                    return result
+        return any(kw in name_lower for kw in org_keywords)
+
+
+# =============================================================================
+# FORMATTER FACTORY
+# =============================================================================
+
+def get_formatter(style: str) -> BaseFormatter:
+    """
+    Get a formatter instance for the specified style.
+    
+    Args:
+        style: Style name (e.g., "Chicago Manual of Style", "APA", "MLA")
         
-        print(f"[{self.name}] No results after {len(attempts)} attempts")
-        return None
+    Returns:
+        Appropriate formatter instance
+    
+    Supported styles:
+        - Chicago Manual of Style (17th) - humanities, history
+        - Turabian (9th) - student papers (alias for Chicago)
+        - APA (7th) - psychology, social sciences
+        - MLA (9th) - literature, humanities
+        - Bluebook - US legal
+        - OSCOLA - UK legal
+        - Harvard - author-date, common in UK/Australia
+        - Vancouver (ICMJE) - medical/scientific journals
+        - ASA - sociology
+    """
+    # Import here to avoid circular imports
+    from formatters.chicago import ChicagoFormatter
+    from formatters.apa import APAFormatter
+    from formatters.mla import MLAFormatter
+    from formatters.legal import BluebookFormatter, OSCOLAFormatter
+    from formatters.harvard import HarvardFormatter
+    from formatters.vancouver import VancouverFormatter
+    from formatters.asa import ASAFormatter
+    
+    style_lower = style.lower().strip()
+    
+    # Notes-bibliography styles
+    if 'chicago' in style_lower:
+        return ChicagoFormatter()
+    elif 'turabian' in style_lower:
+        # Turabian is essentially Chicago for students
+        return ChicagoFormatter()
+    
+    # Author-date styles
+    elif 'apa' in style_lower:
+        return APAFormatter()
+    elif 'harvard' in style_lower:
+        return HarvardFormatter()
+    elif 'asa' in style_lower:
+        return ASAFormatter()
+    elif 'mla' in style_lower:
+        return MLAFormatter()
+    
+    # Legal styles
+    elif 'bluebook' in style_lower:
+        return BluebookFormatter()
+    elif 'oscola' in style_lower:
+        return OSCOLAFormatter()
+    
+    # Scientific/numbered styles
+    elif 'vancouver' in style_lower or 'icmje' in style_lower:
+        return VancouverFormatter()
+    
+    else:
+        # Default to Chicago
+        return ChicagoFormatter()

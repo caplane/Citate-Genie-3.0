@@ -275,6 +275,149 @@ Respond ONLY with valid JSON, no explanation:
 If you cannot access or identify the article, respond: {"error": "Unable to access article"}"""
 
 
+# =============================================================================
+# ORGANIZATION NAME LOOKUP
+# =============================================================================
+
+def lookup_org_name(domain: str) -> Optional[str]:
+    """
+    Look up the full organization name for a domain using AI.
+    
+    This is a lightweight call specifically for .org domains where we
+    couldn't find the author through scraping or lookup tables.
+    
+    Args:
+        domain: Domain name (e.g., "acore.org", "apa.org")
+        
+    Returns:
+        Full organization name (e.g., "American Council on Renewable Energy")
+        or None if lookup fails
+        
+    Examples:
+        lookup_org_name("acore.org") → "American Council on Renewable Energy"
+        lookup_org_name("apa.org") → "American Psychological Association"
+        lookup_org_name("brookings.edu") → "Brookings Institution"
+    """
+    if not domain:
+        return None
+    
+    # Clean domain
+    domain = domain.lower().strip()
+    if domain.startswith('www.'):
+        domain = domain[4:]
+    
+    # Build prompt
+    prompt = f"What is the full official name of the organization that owns the domain '{domain}'? Reply with ONLY the organization name, nothing else."
+    
+    # Try each provider in chain
+    for provider in AI_PROVIDER_CHAIN:
+        if provider not in AVAILABLE_PROVIDERS:
+            continue
+        
+        try:
+            if provider == 'gemini' and GEMINI_API_KEY:
+                result = _call_gemini_simple(prompt)
+            elif provider == 'openai' and OPENAI_API_KEY:
+                result = _call_openai_simple(prompt)
+            elif provider == 'claude' and ANTHROPIC_API_KEY:
+                result = _call_claude_simple(prompt)
+            else:
+                continue
+            
+            if result:
+                # Clean up the response
+                result = result.strip().strip('"').strip("'")
+                # Reject if it looks like an error or too short
+                if len(result) > 3 and 'error' not in result.lower() and 'sorry' not in result.lower():
+                    print(f"[AI_Lookup] Organization name for {domain}: {result}")
+                    return result
+        except Exception as e:
+            print(f"[AI_Lookup] {provider} error for org lookup: {e}")
+            continue
+    
+    return None
+
+
+def _call_gemini_simple(prompt: str) -> Optional[str]:
+    """Simple Gemini call for short text responses."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+    
+    headers = {"Content-Type": "application/json"}
+    params = {"key": GEMINI_API_KEY}
+    
+    data = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"maxOutputTokens": 100, "temperature": 0.1}
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, params=params, json=data, timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            log_api_call('gemini', 'org_lookup', 0.0001)  # Minimal cost
+            return text.strip()
+    except Exception as e:
+        print(f"[AI_Lookup] Gemini simple call error: {e}")
+    return None
+
+
+def _call_openai_simple(prompt: str) -> Optional[str]:
+    """Simple OpenAI call for short text responses."""
+    url = "https://api.openai.com/v1/chat/completions"
+    
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": OPENAI_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 100,
+        "temperature": 0.1
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data, timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            log_api_call('openai', 'org_lookup', 0.001)  # Minimal cost
+            return text.strip()
+    except Exception as e:
+        print(f"[AI_Lookup] OpenAI simple call error: {e}")
+    return None
+
+
+def _call_claude_simple(prompt: str) -> Optional[str]:
+    """Simple Claude call for short text responses."""
+    url = "https://api.anthropic.com/v1/messages"
+    
+    headers = {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": CLAUDE_MODEL,
+        "max_tokens": 100,
+        "messages": [{"role": "user", "content": prompt}]
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data, timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            text = result.get("content", [{}])[0].get("text", "")
+            log_api_call('claude', 'org_lookup', 0.001)  # Minimal cost
+            return text.strip()
+    except Exception as e:
+        print(f"[AI_Lookup] Claude simple call error: {e}")
+    return None
+
+
 def lookup_newspaper_url(url: str, verify: bool = False) -> Optional[CitationMetadata]:
     """
     Look up newspaper/magazine article metadata using AI.

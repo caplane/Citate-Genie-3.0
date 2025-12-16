@@ -1739,8 +1739,10 @@ def accept_reference():
             else:
                 # Build parenthetical from authors/year if available
                 authors = option.get('authors', [])
-                year = option.get('year', '')
-                if authors and year:
+                year = option.get('year', '') or 'n.d.'
+                title = option.get('title', '')
+                
+                if authors:
                     if len(authors) >= 3:
                         surname = authors[0].split(',')[0].split()[-1] if authors[0] else 'Unknown'
                         accepted_data['parenthetical'] = f"({surname} et al., {year})"
@@ -1751,6 +1753,13 @@ def accept_reference():
                     elif len(authors) == 1:
                         surname = authors[0].split(',')[0].split()[-1] if authors[0] else 'Unknown'
                         accepted_data['parenthetical'] = f"({surname}, {year})"
+                elif title:
+                    # No authors - use shortened title
+                    title_short = (title[:25] + '...') if len(title) > 28 else title
+                    accepted_data['parenthetical'] = f"({title_short}, {year})"
+                else:
+                    # Ultimate fallback - should rarely happen
+                    accepted_data['parenthetical'] = f"(Unknown, {year})"
         elif data.get('is_url'):
             # Legacy format with URL info provided directly in request
             accepted_data['is_url'] = True
@@ -1904,13 +1913,9 @@ def finalize_author_date():
                     url = replacement['url']
                     parenthetical = replacement['parenthetical']
                     
-                    # CRITICAL: Escape XML special characters in parenthetical
-                    # to prevent corrupting the docx XML (e.g., & -> &amp;)
-                    parenthetical_escaped = parenthetical.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                    
                     # Simple string replacement for URLs in the XML
                     if url in xml_content:
-                        xml_content = xml_content.replace(url, parenthetical_escaped)
+                        xml_content = xml_content.replace(url, parenthetical)
                         print(f"[API] Replaced URL: {url[:50]}... -> {parenthetical}")
             
             # =================================================================

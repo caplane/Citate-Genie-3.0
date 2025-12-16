@@ -1699,11 +1699,18 @@ def accept_reference():
                 # This is needed for metadata_cache update and Word doc update
                 results = session_data.get('results', [])
                 citation = None
+                # Ensure citation_id is comparable (handle both int and string)
+                cid = int(citation_id) if citation_id is not None else None
                 for r in results:
-                    # Check both 'id' and 'note_id' for proper matching
-                    if r.get('id') == citation_id or r.get('note_id') == citation_id:
+                    rid = r.get('id')
+                    rnid = r.get('note_id')
+                    # Check both 'id' and 'note_id' for proper matching with type coercion
+                    if (rid is not None and int(rid) == cid) or (rnid is not None and int(rnid) == cid):
                         citation = r
                         break
+                
+                if not citation:
+                    print(f"[API] Warning: Could not find citation {citation_id} in results. Results IDs: {[r.get('id') for r in results[:5]]}")
                 
                 # Use formatted text if provided, otherwise we'll format below
                 if option.get('formatted'):
@@ -1763,8 +1770,10 @@ def accept_reference():
                             
                             # Also update results array
                             for r in results:
-                                # Check both 'id' and 'note_id' for proper matching
-                                if r.get('id') == citation_id or r.get('note_id') == citation_id:
+                                rid = r.get('id')
+                                rnid = r.get('note_id')
+                                # Check both 'id' and 'note_id' for proper matching with type coercion
+                                if (rid is not None and int(rid) == cid) or (rnid is not None and int(rnid) == cid):
                                     r['formatted'] = formatted
                                     r['success'] = True
                                     break
@@ -1945,14 +1954,17 @@ def accept_reference():
         # UPDATE METADATA CACHE for footnote mode CSV export
         # When user selects a different option or manually edits, update the cache
         mode = session_data.get('mode', 'footnote')
+        print(f"[API] Mode={mode}, option={option is not None}, citation={citation is not None}")
         if mode == 'footnote' and option and not option.get('is_original'):
             metadata_cache = session_data.get('metadata_cache')
+            print(f"[API] metadata_cache exists: {metadata_cache is not None}")
             if metadata_cache:
                 # Get the original text for this citation
                 # Try 'original' first (results array), then 'text' (notes array) as fallback
                 original_text = ''
                 if citation:
                     original_text = citation.get('original', '') or citation.get('text', '')
+                    print(f"[API] Found original_text from citation: '{original_text[:50]}...' (len={len(original_text)})")
                 
                 if original_text:
                     # Build CitationMetadata from selected option
@@ -1992,7 +2004,7 @@ def accept_reference():
                     # Update cache with user's selection
                     metadata_cache.set(original_text, updated_meta)
                     sessions.set(session_id, 'metadata_cache', metadata_cache)
-                    print(f"[API] Updated metadata_cache for '{original_text[:30]}...'")
+                    print(f"[API] SUCCESS: Updated metadata_cache for '{original_text[:30]}...' with title='{updated_meta.title[:30] if updated_meta.title else 'N/A'}'")
                 else:
                     print(f"[API] Warning: Could not update metadata_cache - original_text is empty. citation={citation is not None}")
         

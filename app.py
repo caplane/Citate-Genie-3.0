@@ -1686,73 +1686,123 @@ def accept_reference():
                     'error': 'Missing citation_id'
                 }), 400
             
-            # Find the citation in session
-            citations = session_data.get('citations', [])
-            citation = None
-            for c in citations:
-                if c.get('id') == citation_id or c.get('note_id') == citation_id:
-                    citation = c
-                    break
-            
-            if not citation:
-                return jsonify({
-                    'success': False,
-                    'error': f'Citation {citation_id} not found in session'
-                }), 404
-            
-            # Get the selected option
-            options = citation.get('options', [])
-            if selected_option < 0 or selected_option >= len(options):
-                return jsonify({
-                    'success': False,
-                    'error': f'Invalid option index {selected_option}'
-                }), 400
-            
-            option = options[selected_option]
-            
-            # Check if this is "Keep Original"
-            if option.get('is_original'):
-                formatted = citation.get('original', '')
-                reference_id = citation_id
+            # Check if option was provided directly in request (footnote mode)
+            # This happens when user selects from alternatives fetched via /api/cite/multiple
+            if 'option' in data:
+                option = data['option']
+                citation = None  # No citation object from session
+                
+                # Use formatted text if provided, otherwise we'll format below
+                if option.get('formatted'):
+                    formatted = option['formatted']
+                    reference_id = citation_id
+                else:
+                    # Format from metadata
+                    from models import CitationMetadata, CitationType
+                    
+                    type_str = option.get('citation_type', 'unknown').lower()
+                    type_map = {
+                        'journal': CitationType.JOURNAL,
+                        'book': CitationType.BOOK,
+                        'legal': CitationType.LEGAL,
+                        'medical': CitationType.MEDICAL,
+                        'newspaper': CitationType.NEWSPAPER,
+                        'government': CitationType.GOVERNMENT,
+                        'url': CitationType.URL,
+                    }
+                    citation_type = type_map.get(type_str, CitationType.JOURNAL)
+                    
+                    metadata = CitationMetadata(
+                        citation_type=citation_type,
+                        title=option.get('title', ''),
+                        authors=option.get('authors', []),
+                        year=option.get('year', ''),
+                        journal=option.get('journal', ''),
+                        publisher=option.get('publisher', ''),
+                        volume=option.get('volume', ''),
+                        issue=option.get('issue', ''),
+                        pages=option.get('pages', ''),
+                        doi=option.get('doi', ''),
+                        url=option.get('url', ''),
+                        source_engine=option.get('source', 'Unknown'),
+                        case_name=option.get('case_name', ''),
+                        citation=option.get('citation', ''),
+                        court=option.get('court', ''),
+                    )
+                    
+                    formatter = get_formatter(style)
+                    formatted = formatter.format(metadata)
+                    reference_id = citation_id
+                
+                print(f"[API] Footnote mode: Accepted option for citation {citation_id}: {formatted[:60]}...")
             else:
-                # Reconstruct CitationMetadata from option data
-                from models import CitationMetadata, CitationType
+                # Author-date mode: Find citation and option from session
+                citations = session_data.get('citations', [])
+                citation = None
+                for c in citations:
+                    if c.get('id') == citation_id or c.get('note_id') == citation_id:
+                        citation = c
+                        break
                 
-                # Map citation_type string to enum
-                type_str = option.get('citation_type', 'unknown').lower()
-                type_map = {
-                    'journal': CitationType.JOURNAL,
-                    'book': CitationType.BOOK,
-                    'legal': CitationType.LEGAL,
-                    'medical': CitationType.MEDICAL,
-                    'newspaper': CitationType.NEWSPAPER,
-                    'government': CitationType.GOVERNMENT,
-                    'url': CitationType.URL,
-                }
-                citation_type = type_map.get(type_str, CitationType.JOURNAL)
+                if not citation:
+                    return jsonify({
+                        'success': False,
+                        'error': f'Citation {citation_id} not found in session'
+                    }), 404
                 
-                # Build metadata
-                metadata = CitationMetadata(
-                    citation_type=citation_type,
-                    title=option.get('title', ''),
-                    authors=option.get('authors', []),
-                    year=option.get('year', ''),
-                    journal=option.get('journal', ''),
-                    publisher=option.get('publisher', ''),
-                    volume=option.get('volume', ''),
-                    issue=option.get('issue', ''),
-                    pages=option.get('pages', ''),
-                    doi=option.get('doi', ''),
-                    url=option.get('url', ''),
-                    source_engine=option.get('source', 'Unknown'),
-                )
+                # Get the selected option
+                options = citation.get('options', [])
+                if selected_option < 0 or selected_option >= len(options):
+                    return jsonify({
+                        'success': False,
+                        'error': f'Invalid option index {selected_option}'
+                    }), 400
                 
-                # Format using specified style
-                formatter = get_formatter(style)
-                formatted = formatter.format(metadata)
-                reference_id = citation_id
-            
-            print(f"[API] Formatted citation {citation_id} option {selected_option}: {formatted[:60]}...")
+                option = options[selected_option]
+                
+                # Check if this is "Keep Original"
+                if option.get('is_original'):
+                    formatted = citation.get('original', '')
+                    reference_id = citation_id
+                else:
+                    # Reconstruct CitationMetadata from option data
+                    from models import CitationMetadata, CitationType
+                    
+                    # Map citation_type string to enum
+                    type_str = option.get('citation_type', 'unknown').lower()
+                    type_map = {
+                        'journal': CitationType.JOURNAL,
+                        'book': CitationType.BOOK,
+                        'legal': CitationType.LEGAL,
+                        'medical': CitationType.MEDICAL,
+                        'newspaper': CitationType.NEWSPAPER,
+                        'government': CitationType.GOVERNMENT,
+                        'url': CitationType.URL,
+                    }
+                    citation_type = type_map.get(type_str, CitationType.JOURNAL)
+                    
+                    # Build metadata
+                    metadata = CitationMetadata(
+                        citation_type=citation_type,
+                        title=option.get('title', ''),
+                        authors=option.get('authors', []),
+                        year=option.get('year', ''),
+                        journal=option.get('journal', ''),
+                        publisher=option.get('publisher', ''),
+                        volume=option.get('volume', ''),
+                        issue=option.get('issue', ''),
+                        pages=option.get('pages', ''),
+                        doi=option.get('doi', ''),
+                        url=option.get('url', ''),
+                        source_engine=option.get('source', 'Unknown'),
+                    )
+                    
+                    # Format using specified style
+                    formatter = get_formatter(style)
+                    formatted = formatter.format(metadata)
+                    reference_id = citation_id
+                
+                print(f"[API] Formatted citation {citation_id} option {selected_option}: {formatted[:60]}...")
             
         else:
             # LEGACY FORMAT: Pre-formatted text provided

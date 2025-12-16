@@ -1680,6 +1680,10 @@ def accept_reference():
             selected_option = data.get('selected_option', 0)
             style = data.get('style') or session_data.get('style', 'APA 7')
             
+            # Initialize option to None to prevent UnboundLocalError in edge cases
+            option = None
+            citation = None
+            
             if citation_id is None:
                 return jsonify({
                     'success': False,
@@ -1690,7 +1694,16 @@ def accept_reference():
             # This happens when user selects from alternatives fetched via /api/cite/multiple
             if 'option' in data:
                 option = data['option']
-                citation = None  # No citation object from session
+                
+                # Look up the citation from session results to get original text
+                # This is needed for metadata_cache update and Word doc update
+                results = session_data.get('results', [])
+                citation = None
+                for r in results:
+                    # Check both 'id' and 'note_id' for proper matching
+                    if r.get('id') == citation_id or r.get('note_id') == citation_id:
+                        citation = r
+                        break
                 
                 # Use formatted text if provided, otherwise we'll format below
                 if option.get('formatted'):
@@ -1733,6 +1746,31 @@ def accept_reference():
                     formatter = get_formatter(style)
                     formatted = formatter.format(metadata)
                     reference_id = citation_id
+                
+                # Update the Word document for footnote mode
+                mode = session_data.get('mode', 'footnote')
+                if mode == 'footnote':
+                    processed_doc = session_data.get('processed_doc')
+                    if processed_doc and citation_id:
+                        from document_processor import update_document_note
+                        try:
+                            updated_doc = update_document_note(processed_doc, citation_id, formatted)
+                            if updated_doc != processed_doc:
+                                sessions.set(session_id, 'processed_doc', updated_doc)
+                                print(f"[API] Updated Word document for footnote {citation_id}")
+                            else:
+                                print(f"[API] Warning: Word doc unchanged for footnote {citation_id} - note may not exist in document")
+                            
+                            # Also update results array
+                            for r in results:
+                                # Check both 'id' and 'note_id' for proper matching
+                                if r.get('id') == citation_id or r.get('note_id') == citation_id:
+                                    r['formatted'] = formatted
+                                    r['success'] = True
+                                    break
+                            sessions.set(session_id, 'results', results)
+                        except Exception as doc_err:
+                            print(f"[API] Warning: Failed to update Word doc for footnote {citation_id}: {doc_err}")
                 
                 print(f"[API] Footnote mode: Accepted option for citation {citation_id}: {formatted[:60]}...")
             else:
@@ -1817,6 +1855,7 @@ def accept_reference():
             
             # For legacy format, check if URL info was provided directly
             citation = None  # Initialize for URL check below
+            option = None  # Initialize for metadata storage check below
         
         # Get or create accepted_references dict
         accepted_refs = session_data.get('accepted_references', {})
@@ -1845,7 +1884,7 @@ def accept_reference():
         
         # For URL citations, also store the parenthetical and URL info
         # Check both new format (from citation object) and legacy format (from request data)
-        if 'selected_option' in data and citation and citation.get('is_url'):
+        if 'selected_option' in data and citation and citation.get('is_url') and option:
             accepted_data['is_url'] = True
             accepted_data['original_url'] = citation.get('original_url', '')
             # Get parenthetical from the selected option
@@ -1910,7 +1949,11 @@ def accept_reference():
             metadata_cache = session_data.get('metadata_cache')
             if metadata_cache:
                 # Get the original text for this citation
-                original_text = citation.get('original', '') if citation else ''
+                # Try 'original' first (results array), then 'text' (notes array) as fallback
+                original_text = ''
+                if citation:
+                    original_text = citation.get('original', '') or citation.get('text', '')
+                
                 if original_text:
                     # Build CitationMetadata from selected option
                     from models import CitationMetadata, CitationType
@@ -1950,6 +1993,8 @@ def accept_reference():
                     metadata_cache.set(original_text, updated_meta)
                     sessions.set(session_id, 'metadata_cache', metadata_cache)
                     print(f"[API] Updated metadata_cache for '{original_text[:30]}...'")
+                else:
+                    print(f"[API] Warning: Could not update metadata_cache - original_text is empty. citation={citation is not None}")
         
         print(f"[API] Accepted reference {reference_id} for session {session_id[:8]}")
         

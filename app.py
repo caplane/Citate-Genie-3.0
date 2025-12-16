@@ -874,12 +874,41 @@ def export_metadata(session_id: str):
             output = StringIO()
             writer = csv.writer(output)
             
-            # Header row
+            # Header row - with separate First/Last name columns for up to 3 authors
             writer.writerow([
-                'Original', 'Formatted', 'Title', 'Authors', 'Year', 
-                'Journal', 'Publisher', 'Volume', 'Issue', 'Pages', 
+                'Original', 'Formatted', 'Title',
+                'Last Name 1', 'First Name 1',
+                'Last Name 2', 'First Name 2', 
+                'Last Name 3', 'First Name 3',
+                'Year', 'Journal', 'Publisher', 'Volume', 'Issue', 'Pages', 
                 'DOI', 'URL', 'Type', 'Source'
             ])
+            
+            # Helper to extract first/last from authors_parsed or authors
+            def get_author_columns(meta_option):
+                """Extract up to 3 authors as (last1, first1, last2, first2, last3, first3)"""
+                authors_parsed = meta_option.get('authors_parsed', [])
+                
+                # Fallback: parse from authors if authors_parsed is empty
+                if not authors_parsed:
+                    authors = meta_option.get('authors', [])
+                    if authors:
+                        from models import parse_author_name
+                        authors_parsed = [parse_author_name(a) for a in authors]
+                
+                # Extract up to 3 authors
+                cols = ['', '', '', '', '', '']  # last1, first1, last2, first2, last3, first3
+                for i, ap in enumerate(authors_parsed[:3]):
+                    if isinstance(ap, dict):
+                        cols[i*2] = ap.get('family', '')
+                        cols[i*2 + 1] = ap.get('given', '')
+                    elif isinstance(ap, str):
+                        from models import parse_author_name
+                        parsed = parse_author_name(ap)
+                        cols[i*2] = parsed.get('family', '')
+                        cols[i*2 + 1] = parsed.get('given', '')
+                
+                return cols
             
             # Data rows
             for cite in citations:
@@ -905,11 +934,14 @@ def export_metadata(session_id: str):
                     meta_option = options[1]  # First AI result
                 
                 if meta_option and not meta_option.get('is_original'):
+                    author_cols = get_author_columns(meta_option)
                     writer.writerow([
                         original,
                         formatted,
                         meta_option.get('title', ''),
-                        '; '.join(meta_option.get('authors', [])),
+                        author_cols[0], author_cols[1],  # Last1, First1
+                        author_cols[2], author_cols[3],  # Last2, First2
+                        author_cols[4], author_cols[5],  # Last3, First3
                         meta_option.get('year', ''),
                         meta_option.get('journal', ''),
                         meta_option.get('publisher', ''),
@@ -924,7 +956,7 @@ def export_metadata(session_id: str):
                 else:
                     # No metadata available, just export original and formatted
                     writer.writerow([
-                        original, formatted, '', '', '', '', '', '', '', '', '', '', '', ''
+                        original, formatted, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''
                     ])
             
             csv_content = output.getvalue()
@@ -1334,35 +1366,60 @@ def process_author_date():
         # Process each URL through AI lookup to extract metadata
         # =====================================================================
         
-        def extract_surname(author_name):
+        def get_family_name(author_parsed):
             """
-            Extract surname from author name in various formats.
-            Handles: "Smith, John" -> "Smith"
-                     "John Smith" -> "Smith"
-                     "Smith" -> "Smith"
-                     "van Gogh, Vincent" -> "van Gogh"
+            Get the family name from a parsed author dict.
+            
+            Args:
+                author_parsed: Dict with 'family' key, optionally 'given' and 'is_org'
+                
+            Returns:
+                The family name string
             """
-            if not author_name:
+            if not author_parsed:
                 return 'Unknown'
+            if isinstance(author_parsed, str):
+                # Fallback: parse the string
+                from models import parse_author_name
+                author_parsed = parse_author_name(author_parsed)
+            return author_parsed.get('family', 'Unknown')
+        
+        def build_parenthetical(metadata):
+            """
+            Build parenthetical citation from metadata using authors_parsed.
             
-            author_name = author_name.strip()
+            Uses structured author data when available for accurate surnames.
+            Falls back to parsing author strings if authors_parsed is empty.
+            """
+            year = metadata.year or 'n.d.'
             
-            # If contains comma, surname is before the comma
-            if ',' in author_name:
-                return author_name.split(',')[0].strip()
+            # Prefer authors_parsed (structured data)
+            authors_parsed = getattr(metadata, 'authors_parsed', []) or []
             
-            # Otherwise, surname is the last word (or last word with prefix)
-            parts = author_name.split()
-            if len(parts) == 0:
-                return 'Unknown'
-            elif len(parts) == 1:
-                return parts[0]
+            # Fallback: parse from authors strings
+            if not authors_parsed and metadata.authors:
+                from models import parse_author_name
+                authors_parsed = [parse_author_name(a) for a in metadata.authors]
+            
+            if not authors_parsed:
+                # No authors - use title
+                title = metadata.title or 'Unknown'
+                title_short = (title[:30] + '...') if len(title) > 33 else title
+                return f"({title_short}, {year})"
+            
+            if len(authors_parsed) >= 3:
+                # 3+ authors: use et al.
+                surname = get_family_name(authors_parsed[0])
+                return f"({surname} et al., {year})"
+            elif len(authors_parsed) == 2:
+                # 2 authors: Author1 & Author2
+                surname1 = get_family_name(authors_parsed[0])
+                surname2 = get_family_name(authors_parsed[1])
+                return f"({surname1} & {surname2}, {year})"
             else:
-                # Check for lowercase prefix (van, de, etc.) before last name
-                prefixes = ['van', 'de', 'von', 'den', 'der', 'la', 'le', 'di', 'da', 'dos', 'das', 'del', 'della', 'du', 'el', 'al', 'bin', 'ibn']
-                if len(parts) >= 2 and parts[-2].lower() in prefixes:
-                    return f"{parts[-2]} {parts[-1]}"
-                return parts[-1]
+                # 1 author
+                surname = get_family_name(authors_parsed[0])
+                return f"({surname}, {year})"
         
         def process_single_url(url_idx, url_info):
             """Process one URL - called in parallel. Returns citation-like structure."""
@@ -1378,33 +1435,16 @@ def process_author_date():
                 metadata, formatted = get_citation(url, style)
                 
                 if metadata:
-                    # Build parenthetical text from metadata
+                    # Build parenthetical using structured author data
+                    parenthetical = build_parenthetical(metadata)
                     authors = metadata.authors if metadata.authors else []
                     year = metadata.year or ''
-                    
-                    if len(authors) >= 3:
-                        # 3+ authors: use et al.
-                        surname = extract_surname(authors[0])
-                        parenthetical = f"({surname} et al., {year})"
-                    elif len(authors) == 2:
-                        # 2 authors: Author1 & Author2
-                        surname1 = extract_surname(authors[0])
-                        surname2 = extract_surname(authors[1])
-                        parenthetical = f"({surname1} & {surname2}, {year})"
-                    elif len(authors) == 1:
-                        # 1 author
-                        surname = extract_surname(authors[0])
-                        parenthetical = f"({surname}, {year})"
-                    else:
-                        # No author - use title (shortened if needed)
-                        title_short = (metadata.title[:30] + '...') if metadata.title and len(metadata.title) > 30 else (metadata.title or 'Unknown')
-                        parenthetical = f"({title_short}, {year})"
-                        parenthetical = f"({title_short}, {year})"
                     
                     options = [{
                         'id': 0,
                         'title': '[Keep Original URL]',
                         'authors': [],
+                        'authors_parsed': [],
                         'year': '',
                         'journal': '',
                         'publisher': '',
@@ -1420,6 +1460,7 @@ def process_author_date():
                         'id': 1,
                         'title': metadata.title or '',
                         'authors': authors,
+                        'authors_parsed': getattr(metadata, 'authors_parsed', []) or [],
                         'year': year,
                         'journal': getattr(metadata, 'journal', '') or '',
                         'publisher': getattr(metadata, 'publisher', '') or '',
@@ -1737,20 +1778,42 @@ def accept_reference():
             elif citation.get('parenthetical'):
                 accepted_data['parenthetical'] = citation.get('parenthetical')
             else:
-                # Build parenthetical from authors/year if available
-                authors = option.get('authors', [])
-                year = option.get('year', '')
-                if authors and year:
-                    if len(authors) >= 3:
-                        surname = authors[0].split(',')[0].split()[-1] if authors[0] else 'Unknown'
+                # Build parenthetical using authors_parsed (preferred) or authors
+                authors_parsed = option.get('authors_parsed', [])
+                year = option.get('year', '') or 'n.d.'
+                
+                # Helper to get family name from parsed author
+                def get_family(ap):
+                    if isinstance(ap, dict):
+                        return ap.get('family', 'Unknown')
+                    elif isinstance(ap, str):
+                        from models import parse_author_name
+                        return parse_author_name(ap).get('family', 'Unknown')
+                    return 'Unknown'
+                
+                # Fallback: parse from authors strings if authors_parsed is empty
+                if not authors_parsed:
+                    authors = option.get('authors', [])
+                    if authors:
+                        from models import parse_author_name
+                        authors_parsed = [parse_author_name(a) for a in authors]
+                
+                if authors_parsed:
+                    if len(authors_parsed) >= 3:
+                        surname = get_family(authors_parsed[0])
                         accepted_data['parenthetical'] = f"({surname} et al., {year})"
-                    elif len(authors) == 2:
-                        s1 = authors[0].split(',')[0].split()[-1] if authors[0] else 'Unknown'
-                        s2 = authors[1].split(',')[0].split()[-1] if authors[1] else 'Unknown'
+                    elif len(authors_parsed) == 2:
+                        s1 = get_family(authors_parsed[0])
+                        s2 = get_family(authors_parsed[1])
                         accepted_data['parenthetical'] = f"({s1} & {s2}, {year})"
-                    elif len(authors) == 1:
-                        surname = authors[0].split(',')[0].split()[-1] if authors[0] else 'Unknown'
+                    elif len(authors_parsed) == 1:
+                        surname = get_family(authors_parsed[0])
                         accepted_data['parenthetical'] = f"({surname}, {year})"
+                else:
+                    # No authors - use title
+                    title = option.get('title', 'Unknown')
+                    title_short = (title[:30] + '...') if len(title) > 33 else title
+                    accepted_data['parenthetical'] = f"({title_short}, {year})"
         elif data.get('is_url'):
             # Legacy format with URL info provided directly in request
             accepted_data['is_url'] = True

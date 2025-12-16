@@ -93,6 +93,157 @@ def normalize_doi(doi: str) -> str:
     return doi.lower().strip()
 
 
+def parse_author_name(name: str) -> Dict[str, str]:
+    """
+    Parse an author name string into structured format.
+    
+    Handles various formats:
+    - "Serena Mayeri" → {"given": "Serena", "family": "Mayeri"}
+    - "Mayeri, Serena" → {"given": "Serena", "family": "Mayeri"}
+    - "E.C. Caplan" → {"given": "E.C.", "family": "Caplan"}
+    - "EC Caplan" → {"given": "E.C.", "family": "Caplan"}
+    - "JAMES TG" → {"given": "T.G.", "family": "James"} (PubMed format)
+    - "World Health Organization" → {"family": "World Health Organization", "is_org": True}
+    - "ACORE" → {"family": "ACORE", "is_org": True}
+    
+    Returns:
+        Dict with "given" and "family" keys, or "family" and "is_org" for organizations
+    """
+    if not name:
+        return {"family": "Unknown"}
+    
+    name = name.strip()
+    
+    # Check if organizational author
+    if _is_organizational_author(name):
+        return {"family": name, "is_org": True}
+    
+    # Handle semicolon-separated names (PubMed multi-author format like "JAMES TG; TURNER EA")
+    # This function handles single authors, so just take the name as-is
+    
+    # Has comma: "Last, First" or "Last, F.M."
+    if "," in name:
+        parts = name.split(",", 1)
+        family = parts[0].strip()
+        given = _normalize_initials(parts[1].strip()) if len(parts) > 1 else ""
+        # Handle PubMed format where it might be "JAMES, TG" (all caps)
+        if family.isupper() and len(family) > 2:
+            family = family.title()
+        return {"given": given, "family": family}
+    
+    # Split into parts
+    parts = name.split()
+    
+    if len(parts) == 1:
+        # Single word - could be org or single-name author
+        return {"family": name}
+    
+    # Check for PubMed format: "JAMES TG" - all caps surname followed by initials
+    if len(parts) == 2 and parts[0].isupper() and _looks_like_initials(parts[1]):
+        family = parts[0].title()  # JAMES → James
+        given = _normalize_initials(parts[1])  # TG → T.G.
+        return {"given": given, "family": family}
+    
+    # Check if first part looks like initials: "E.C. Caplan" or "EC Caplan"
+    if _looks_like_initials(parts[0]):
+        given = _normalize_initials(parts[0])
+        family = " ".join(parts[1:])
+        return {"given": given, "family": family}
+    
+    # Standard format: "First Last" or "First Middle Last"
+    given = parts[0]
+    family = " ".join(parts[1:])
+    
+    return {"given": given, "family": family}
+
+
+def _normalize_initials(text: str) -> str:
+    """
+    Normalize initials to consistent format with periods.
+    
+    Examples:
+    - "EC" → "E.C."
+    - "E.C." → "E.C."
+    - "TG" → "T.G."
+    - "E C" → "E.C."
+    - "Serena" → "Serena" (not initials, return as-is)
+    """
+    if not text:
+        return ""
+    
+    text = text.strip()
+    
+    # If it's a regular name (not initials), return as-is
+    if len(text) > 4 and not any(c == '.' for c in text):
+        # Likely a full name, not initials
+        return text
+    
+    # Remove existing periods and spaces
+    cleaned = text.replace(".", "").replace(" ", "")
+    
+    # If all uppercase and short, it's initials
+    if cleaned.isupper() and len(cleaned) <= 4:
+        return ".".join(cleaned) + "."
+    
+    # If mixed case or longer, return original (might be a name)
+    return text
+
+
+def _looks_like_initials(text: str) -> bool:
+    """
+    Check if text looks like author initials.
+    
+    Returns True for: "EC", "E.C.", "TG", "T.G.", "E.C.M.", "ECM"
+    Returns False for: "Eric", "Serena", "World"
+    """
+    if not text:
+        return False
+    
+    # Remove periods and spaces
+    cleaned = text.replace(".", "").replace(" ", "")
+    
+    # Initials are typically 1-4 uppercase letters
+    return len(cleaned) <= 4 and cleaned.isupper()
+
+
+def _is_organizational_author(name: str) -> bool:
+    """
+    Check if the author name is an organization rather than a person.
+    
+    Returns True for:
+    - Known organization keywords (Organization, Institute, Commission, etc.)
+    - All-caps acronyms (ACORE, WHO, NIH)
+    - Names without typical first/last structure
+    """
+    if not name:
+        return False
+    
+    name_lower = name.lower()
+    
+    # Known organizational keywords
+    org_keywords = [
+        'organization', 'organisation', 'institute', 'institution',
+        'commission', 'committee', 'council', 'agency', 'authority',
+        'department', 'ministry', 'bureau', 'office', 'foundation',
+        'association', 'society', 'federation', 'union', 'corporation',
+        'university', 'college', 'library', 'museum', 'center', 'centre',
+        'group', 'team', 'project', 'initiative', 'network', 'board'
+    ]
+    
+    for keyword in org_keywords:
+        if keyword in name_lower:
+            return True
+    
+    # All-caps acronyms (2-10 chars, no lowercase)
+    if name.isupper() and 2 <= len(name) <= 10 and name.isalpha():
+        return True
+    
+    # Check for "The X" pattern (e.g., "The Atlantic" - but this is a publication, not author)
+    # Don't flag these as orgs
+    
+    return False
+
+
 @dataclass
 class CitationMetadata:
     """
@@ -115,6 +266,7 @@ class CitationMetadata:
     # Common fields (most types)
     title: str = ""
     authors: List[str] = field(default_factory=list)
+    authors_parsed: List[Dict[str, str]] = field(default_factory=list)  # Structured: [{"given": "Eric", "family": "Caplan"}, {"family": "ACORE", "is_org": True}]
     year: Optional[str] = None
     url: str = ""
     doi: str = ""
@@ -201,6 +353,7 @@ class CitationMetadata:
             'source_engine': self.source_engine,
             'title': self.title,
             'authors': self.authors,
+            'authors_parsed': self.authors_parsed,
             'year': self.year,
             'url': self.url,
             'doi': self.doi,
@@ -253,6 +406,7 @@ class CitationMetadata:
             source_engine=d.get('source_engine', ''),
             title=d.get('title', ''),
             authors=d.get('authors', []),
+            authors_parsed=d.get('authors_parsed', []),
             year=d.get('year'),
             url=d.get('url', ''),
             doi=d.get('doi', ''),

@@ -915,23 +915,33 @@ def export_metadata(session_id: str):
                 cite_id = str(cite.get('id') or cite.get('note_id', ''))
                 original = cite.get('original', '')
                 
-                # Get formatted text from accepted_references or citation
+                # Get formatted text and metadata from accepted_references (user's actual selection)
                 formatted = ''
+                meta_option = None
+                
                 if cite_id in accepted_refs:
-                    formatted = accepted_refs[cite_id].get('formatted', '')
-                elif cite.get('formatted'):
+                    accepted = accepted_refs[cite_id]
+                    formatted = accepted.get('formatted', '')
+                    
+                    # Check if accepted_refs has the full option data
+                    # (it should have been stored when user accepted)
+                    if accepted.get('title') or accepted.get('authors'):
+                        meta_option = accepted
+                
+                # Fallback to citation data if not in accepted_refs
+                if not formatted and cite.get('formatted'):
                     formatted = cite.get('formatted', '')
                 
-                # Get metadata from the selected/first option
-                options = cite.get('options', [])
-                selected_idx = cite.get('selected_option', 1)
-                
-                # Get the non-original option if available
-                meta_option = None
-                if len(options) > 1 and selected_idx > 0 and selected_idx < len(options):
-                    meta_option = options[selected_idx]
-                elif len(options) > 1:
-                    meta_option = options[1]  # First AI result
+                # Fallback to options if meta_option not found in accepted_refs
+                if not meta_option:
+                    options = cite.get('options', [])
+                    selected_idx = cite.get('selected_option', 1)
+                    
+                    # Get the non-original option if available
+                    if len(options) > 1 and selected_idx > 0 and selected_idx < len(options):
+                        meta_option = options[selected_idx]
+                    elif len(options) > 1:
+                        meta_option = options[1]  # First AI result
                 
                 if meta_option and not meta_option.get('is_original'):
                     author_cols = get_author_columns(meta_option)
@@ -1766,6 +1776,22 @@ def accept_reference():
             'formatted': formatted,
             'accepted_at': time.time()
         }
+        
+        # Store the full option metadata for CSV export
+        if option:
+            accepted_data['title'] = option.get('title', '')
+            accepted_data['authors'] = option.get('authors', [])
+            accepted_data['authors_parsed'] = option.get('authors_parsed', [])
+            accepted_data['year'] = option.get('year', '')
+            accepted_data['journal'] = option.get('journal', '')
+            accepted_data['publisher'] = option.get('publisher', '')
+            accepted_data['volume'] = option.get('volume', '')
+            accepted_data['issue'] = option.get('issue', '')
+            accepted_data['pages'] = option.get('pages', '')
+            accepted_data['doi'] = option.get('doi', '')
+            accepted_data['url'] = option.get('url', '')
+            accepted_data['citation_type'] = option.get('citation_type', '')
+            accepted_data['source'] = option.get('source', '')
         
         # For URL citations, also store the parenthetical and URL info
         # Check both new format (from citation object) and legacy format (from request data)

@@ -2123,6 +2123,7 @@
         let fnSuccessCount = 0;
         let fnJustSaved = false;
         let fnSaveInProgress = false;
+        let fnSelectedOptionIndex = null;  // Track which alternative was selected (for metadata preservation)
         
         function fnRenderCitationList() {
             const container = document.getElementById('citation-list');
@@ -2169,6 +2170,7 @@
             
             fnActiveIndex = idx;
             fnJustSaved = false;
+            fnSelectedOptionIndex = null;  // Reset selection when loading new citation
             const cite = currentCitations[idx];
             const noteId = cite.id || idx + 1;
             
@@ -2244,6 +2246,7 @@
         function fnSelectAlternative(idx) {
             if (window.fnAlternatives?.[idx]) {
                 document.getElementById('fn-final-textarea').value = window.fnAlternatives[idx].citation;
+                fnSelectedOptionIndex = idx;  // Track selection for metadata preservation
             }
         }
         
@@ -2266,11 +2269,47 @@
             }
             
             try {
-                const res = await fetch('/api/update', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: currentSessionId, note_id: noteId, html: newText })
-                });
+                let res;
+                
+                // If user selected an alternative, use accept-reference to preserve metadata
+                if (fnSelectedOptionIndex !== null && window.fnAlternatives?.[fnSelectedOptionIndex]) {
+                    const selectedAlt = window.fnAlternatives[fnSelectedOptionIndex];
+                    res = await fetch('/api/accept-reference', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            session_id: currentSessionId,
+                            citation_id: noteId,
+                            selected_option: fnSelectedOptionIndex,
+                            // Pass full metadata for backend to store
+                            option: {
+                                formatted: selectedAlt.citation,
+                                title: selectedAlt.metadata?.title || '',
+                                authors: selectedAlt.metadata?.authors || [],
+                                year: selectedAlt.metadata?.year || '',
+                                journal: selectedAlt.metadata?.journal || '',
+                                publisher: selectedAlt.metadata?.publisher || '',
+                                volume: selectedAlt.metadata?.volume || '',
+                                issue: selectedAlt.metadata?.issue || '',
+                                pages: selectedAlt.metadata?.pages || '',
+                                doi: selectedAlt.metadata?.doi || '',
+                                url: selectedAlt.metadata?.url || '',
+                                citation_type: selectedAlt.type || 'unknown',
+                                source: selectedAlt.source || '',
+                                case_name: selectedAlt.metadata?.case_name || '',
+                                citation: selectedAlt.metadata?.citation || '',
+                                court: selectedAlt.metadata?.court || ''
+                            }
+                        })
+                    });
+                } else {
+                    // Manual edit - use legacy update endpoint
+                    res = await fetch('/api/update', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ session_id: currentSessionId, note_id: noteId, html: newText })
+                    });
+                }
                 
                 const data = await res.json();
                 
@@ -2278,6 +2317,7 @@
                     currentCitations[fnActiveIndex].formatted = newText;
                     if (!currentCitations[fnActiveIndex].success) fnSuccessCount++;
                     currentCitations[fnActiveIndex].success = true;
+                    fnSelectedOptionIndex = null;  // Reset after successful save
                     
                     if (!silent) fnJustSaved = true;
                     else fnSaveInProgress = false;

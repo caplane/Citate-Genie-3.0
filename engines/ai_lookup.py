@@ -1393,12 +1393,18 @@ def _guess_to_metadata(guess: dict, raw_source: str) -> CitationMetadata:
         'conference': CitationType.JOURNAL,
     }
     
+    # Parse authors into structured format
+    from models import parse_author_name
+    authors = guess.get('authors', [])
+    authors_parsed = [parse_author_name(a) for a in authors]
+    
     return CitationMetadata(
         citation_type=type_map.get(guess.get('citation_type', '').lower(), CitationType.UNKNOWN),
         raw_source=raw_source,
         source_engine="AI Lookup",
         title=guess.get('title', ''),
-        authors=guess.get('authors', []),
+        authors=authors,
+        authors_parsed=authors_parsed,
         year=guess.get('year', ''),
         journal=guess.get('journal', ''),
         volume=guess.get('volume', ''),
@@ -1428,12 +1434,17 @@ def _dict_to_metadata(data: dict, original_authors: List[str], original_year: st
     if not authors:
         authors = original_authors
     
+    # Parse authors into structured format
+    from models import parse_author_name
+    authors_parsed = [parse_author_name(a) for a in authors]
+    
     return CitationMetadata(
         citation_type=citation_type,
         raw_source=f"({', '.join(original_authors)}, {original_year})",
         source_engine="AI Lookup",
         title=data.get('title', ''),
         authors=authors,
+        authors_parsed=authors_parsed,
         year=data.get('year', original_year),
         journal=data.get('journal', ''),
         volume=data.get('volume', ''),

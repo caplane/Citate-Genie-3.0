@@ -229,15 +229,24 @@ class CrossrefEngine(SearchEngine):
     
     def _normalize(self, item: dict, raw_source: str) -> CitationMetadata:
         """Convert Crossref response to CitationMetadata."""
-        # Extract authors
+        # Extract authors - preserve structured data
         authors = []
+        authors_parsed = []
         for author in item.get('author', []):
             given = author.get('given', '')
             family = author.get('family', '')
             if given and family:
                 authors.append(f"{given} {family}")
+                authors_parsed.append({"given": given, "family": family})
             elif family:
+                # Could be organizational or single-name author
                 authors.append(family)
+                # Check if it looks like an organization
+                from models import _is_organizational_author
+                if _is_organizational_author(family):
+                    authors_parsed.append({"family": family, "is_org": True})
+                else:
+                    authors_parsed.append({"family": family})
         
         # Extract year
         year = None
@@ -272,6 +281,7 @@ class CrossrefEngine(SearchEngine):
             raw_source=raw_source,
             title=title,
             authors=authors,
+            authors_parsed=authors_parsed,
             year=year,
             journal=journal,
             volume=item.get('volume', ''),
@@ -378,13 +388,17 @@ class OpenAlexEngine(SearchEngine):
     
     def _normalize(self, item: dict, raw_source: str) -> CitationMetadata:
         """Convert OpenAlex response to CitationMetadata."""
-        # Extract authors
+        # Extract authors - parse display_name into structured format
         authors = []
+        authors_parsed = []
         for authorship in item.get('authorships', []):
             author_info = authorship.get('author', {})
             name = author_info.get('display_name')
             if name:
                 authors.append(name)
+                # Parse the display name into given/family
+                from models import parse_author_name
+                authors_parsed.append(parse_author_name(name))
         
         # Get journal from primary location
         journal = ''
@@ -409,6 +423,7 @@ class OpenAlexEngine(SearchEngine):
             raw_source=raw_source,
             title=item.get('display_name', item.get('title', '')),
             authors=authors,
+            authors_parsed=authors_parsed,
             year=str(item.get('publication_year', '')) if item.get('publication_year') else None,
             journal=journal,
             volume=biblio.get('volume', ''),
@@ -557,8 +572,14 @@ class SemanticScholarEngine(SearchEngine):
     
     def _normalize(self, item: dict, raw_source: str) -> CitationMetadata:
         """Convert Semantic Scholar response to CitationMetadata."""
-        # Extract authors
+        # Extract authors - parse names into structured format
         authors = [a.get('name', '') for a in item.get('authors', []) if a.get('name')]
+        authors_parsed = []
+        for a in item.get('authors', []):
+            name = a.get('name', '')
+            if name:
+                from models import parse_author_name
+                authors_parsed.append(parse_author_name(name))
         
         # Get journal/venue
         venue = item.get('venue', '')
@@ -579,6 +600,7 @@ class SemanticScholarEngine(SearchEngine):
             raw_source=raw_source,
             title=item.get('title', ''),
             authors=authors,
+            authors_parsed=authors_parsed,
             year=str(item.get('year', '')) if item.get('year') else None,
             journal=venue,
             volume=str(item.get('volume', '')) if item.get('volume') else '',
@@ -785,13 +807,17 @@ class PubMedEngine(SearchEngine):
     
     def _normalize_summary(self, article: dict, pmid: str, raw_source: str) -> CitationMetadata:
         """Convert PubMed ESummary response to CitationMetadata."""
-        # Extract authors
+        # Extract authors - parse PubMed format (e.g., "JAMES TG") into structured format
         authors = []
+        authors_parsed = []
         author_list = article.get('authors', [])
         for author in author_list:
             name = author.get('name', '')
             if name:
                 authors.append(name)
+                # Parse the PubMed format name into given/family
+                from models import parse_author_name
+                authors_parsed.append(parse_author_name(name))
         
         # Extract year from pubdate
         year = None
@@ -819,6 +845,7 @@ class PubMedEngine(SearchEngine):
             raw_source=raw_source,
             title=article.get('title', ''),
             authors=authors,
+            authors_parsed=authors_parsed,
             year=year,
             journal=journal,
             volume=article.get('volume', ''),

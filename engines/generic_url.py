@@ -1446,12 +1446,17 @@ class GenericURLEngine(SearchEngine):
                     authors = [org_author]
         
         # Build base metadata
+        # Parse authors into structured format for parenthetical citations
+        from models import parse_author_name
+        authors_parsed = [parse_author_name(a) for a in authors]
+        
         result = CitationMetadata(
             citation_type=citation_type,
             raw_source=url,
             source_engine=self.name,
             title=metadata.get('title', ''),
             authors=authors,
+            authors_parsed=authors_parsed,
             url=url,
             access_date=access_date,
             raw_data=metadata,

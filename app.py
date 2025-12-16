@@ -1853,6 +1853,54 @@ def accept_reference():
         # Save back to session
         sessions.set(session_id, 'accepted_references', accepted_refs)
         
+        # UPDATE METADATA CACHE for footnote mode CSV export
+        # When user selects a different option or manually edits, update the cache
+        mode = session_data.get('mode', 'footnote')
+        if mode == 'footnote' and option and not option.get('is_original'):
+            metadata_cache = session_data.get('metadata_cache')
+            if metadata_cache:
+                # Get the original text for this citation
+                original_text = citation.get('original', '') if citation else ''
+                if original_text:
+                    # Build CitationMetadata from selected option
+                    from models import CitationMetadata, CitationType
+                    type_str = option.get('citation_type', 'unknown').lower()
+                    type_map = {
+                        'journal': CitationType.JOURNAL,
+                        'book': CitationType.BOOK,
+                        'legal': CitationType.LEGAL,
+                        'medical': CitationType.MEDICAL,
+                        'newspaper': CitationType.NEWSPAPER,
+                        'government': CitationType.GOVERNMENT,
+                        'url': CitationType.URL,
+                    }
+                    citation_type = type_map.get(type_str, CitationType.JOURNAL)
+                    
+                    updated_meta = CitationMetadata(
+                        citation_type=citation_type,
+                        raw_source=original_text,
+                        title=option.get('title', ''),
+                        authors=option.get('authors', []),
+                        year=option.get('year', ''),
+                        journal=option.get('journal', ''),
+                        publisher=option.get('publisher', ''),
+                        volume=option.get('volume', ''),
+                        issue=option.get('issue', ''),
+                        pages=option.get('pages', ''),
+                        doi=option.get('doi', ''),
+                        url=option.get('url', ''),
+                        source_engine=option.get('source', 'User Selection'),
+                        # Legal fields
+                        case_name=option.get('case_name', ''),
+                        citation=option.get('citation', ''),
+                        court=option.get('court', ''),
+                    )
+                    
+                    # Update cache with user's selection
+                    metadata_cache.set(original_text, updated_meta)
+                    sessions.set(session_id, 'metadata_cache', metadata_cache)
+                    print(f"[API] Updated metadata_cache for '{original_text[:30]}...'")
+        
         print(f"[API] Accepted reference {reference_id} for session {session_id[:8]}")
         
         # Build response

@@ -1241,7 +1241,7 @@ def route_citation(query: str, style: str = "chicago", context: str = "", metada
 # MULTIPLE RESULTS FUNCTION
 # =============================================================================
 
-def get_multiple_citations(query: str, style: str = "chicago", limit: int = 5) -> List[Tuple[CitationMetadata, str, str]]:
+def get_multiple_citations(query: str, style: str = "chicago", limit: int = 6) -> List[Tuple[CitationMetadata, str, str]]:
     """
     Get multiple citation candidates for user selection.
     
@@ -1700,7 +1700,7 @@ def get_multiple_citations(query: str, style: str = "chicago", limit: int = 5) -
 # MULTI-OPTION CITATIONS (uses Claude's get_citation_options)
 # =============================================================================
 
-def get_citation_options_formatted(query: str, style: str = "chicago", limit: int = 5) -> List[dict]:
+def get_citation_options_formatted(query: str, style: str = "chicago", limit: int = 6) -> List[dict]:
     """
     Get multiple citation options from multiple APIs.
     

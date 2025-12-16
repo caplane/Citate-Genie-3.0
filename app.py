@@ -1967,9 +1967,13 @@ def finalize_author_date():
                     url = replacement['url']
                     parenthetical = replacement['parenthetical']
                     
+                    # CRITICAL: Escape XML special characters in parenthetical
+                    # to prevent corrupting the docx XML (e.g., & -> &amp;)
+                    parenthetical_escaped = parenthetical.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                    
                     # Simple string replacement for URLs in the XML
                     if url in xml_content:
-                        xml_content = xml_content.replace(url, parenthetical)
+                        xml_content = xml_content.replace(url, parenthetical_escaped)
                         print(f"[API] Replaced URL: {url[:50]}... -> {parenthetical}")
             
             # =================================================================

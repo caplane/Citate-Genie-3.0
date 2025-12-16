@@ -1739,10 +1739,8 @@ def accept_reference():
             else:
                 # Build parenthetical from authors/year if available
                 authors = option.get('authors', [])
-                year = option.get('year', '') or 'n.d.'
-                title = option.get('title', '')
-                
-                if authors:
+                year = option.get('year', '')
+                if authors and year:
                     if len(authors) >= 3:
                         surname = authors[0].split(',')[0].split()[-1] if authors[0] else 'Unknown'
                         accepted_data['parenthetical'] = f"({surname} et al., {year})"
@@ -1753,13 +1751,6 @@ def accept_reference():
                     elif len(authors) == 1:
                         surname = authors[0].split(',')[0].split()[-1] if authors[0] else 'Unknown'
                         accepted_data['parenthetical'] = f"({surname}, {year})"
-                elif title:
-                    # No authors - use shortened title
-                    title_short = (title[:25] + '...') if len(title) > 28 else title
-                    accepted_data['parenthetical'] = f"({title_short}, {year})"
-                else:
-                    # Ultimate fallback - should rarely happen
-                    accepted_data['parenthetical'] = f"(Unknown, {year})"
         elif data.get('is_url'):
             # Legacy format with URL info provided directly in request
             accepted_data['is_url'] = True

@@ -74,7 +74,7 @@ class User(Base):
     
     # Relationships
     orders = relationship('Order', back_populates='user')
-    credit_entries = relationship('CreditLedger', back_populates='user')
+    credit_entries = relationship('CreditLedger', back_populates='user', foreign_keys='[CreditLedger.user_id]')
     
     # Password hashing
     def set_password(self, password: str):

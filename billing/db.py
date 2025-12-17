@@ -175,9 +175,14 @@ def init_db(app=None):
         init_db(app)
     
     Registers teardown to clean up sessions after each request.
+    Auto-creates tables if they don't exist (idempotent).
     """
     # Ensure engine is created
-    get_engine()
+    engine = get_engine()
+    
+    # Auto-create tables (idempotent - only creates if missing)
+    from billing.models import Base
+    Base.metadata.create_all(engine)
     
     if app is not None:
         @app.teardown_appcontext

@@ -55,6 +55,14 @@ from document_processor import process_document
 from processors.topic_extractor import get_document_context
 from processors.document_metadata import export_cache_to_csv
 
+# Billing system imports
+from billing import (
+    init_billing, billing_bp, 
+    requires_credits, spend_user_credit,
+    get_balance_fast, has_credits
+)
+from flask_login import current_user
+
 # =============================================================================
 # APP CONFIGURATION
 # =============================================================================
@@ -63,7 +71,68 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-key-change-in-prod')
 
+# Initialize billing system (database + auth)
+init_billing(app)
+
+# Register billing routes (/billing/*)
+app.register_blueprint(billing_bp)
+
 ALLOWED_EXTENSIONS = {'docx'}
+
+# =============================================================================
+# PREVIEW RATE LIMITING (Option C guardrails)
+# =============================================================================
+
+# Track preview usage by IP address
+# Format: {ip: {'count': int, 'date': str, 'session_used': bool}}
+_preview_limits = {}
+PREVIEW_MAX_PER_IP_PER_DAY = 3
+
+def check_preview_allowed(ip_address: str, session_id: str = None) -> tuple:
+    """
+    Check if preview is allowed for this IP/session.
+    
+    Returns:
+        (allowed: bool, reason: str, remaining: int)
+    """
+    from datetime import date
+    today = date.today().isoformat()
+    
+    # Clean old entries
+    for ip in list(_preview_limits.keys()):
+        if _preview_limits[ip].get('date') != today:
+            del _preview_limits[ip]
+    
+    # Check this IP
+    if ip_address not in _preview_limits:
+        _preview_limits[ip_address] = {'count': 0, 'date': today, 'sessions': set()}
+    
+    entry = _preview_limits[ip_address]
+    
+    # Reset if new day
+    if entry['date'] != today:
+        entry['count'] = 0
+        entry['date'] = today
+        entry['sessions'] = set()
+    
+    remaining = PREVIEW_MAX_PER_IP_PER_DAY - entry['count']
+    
+    if entry['count'] >= PREVIEW_MAX_PER_IP_PER_DAY:
+        return False, 'Daily preview limit reached. Please register for unlimited access.', 0
+    
+    return True, 'ok', remaining
+
+def record_preview_usage(ip_address: str, session_id: str = None):
+    """Record that a preview was used."""
+    from datetime import date
+    today = date.today().isoformat()
+    
+    if ip_address not in _preview_limits:
+        _preview_limits[ip_address] = {'count': 0, 'date': today, 'sessions': set()}
+    
+    _preview_limits[ip_address]['count'] += 1
+    if session_id:
+        _preview_limits[ip_address]['sessions'].add(session_id)
 
 # =============================================================================
 # FIX: PERSISTENT SESSION MANAGEMENT
@@ -674,8 +743,31 @@ def process_doc():
     - add_links: whether to make URLs clickable (optional)
     
     Returns processed document as download.
+    
+    Preview Mode (Option C):
+    - Unauthenticated users can preview (rate limited)
+    - Download requires authentication + credits
     """
     try:
+        # Check authentication status
+        is_authenticated = current_user.is_authenticated
+        is_preview = not is_authenticated
+        
+        # Rate limit for unauthenticated users
+        if is_preview:
+            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+            if client_ip and ',' in client_ip:
+                client_ip = client_ip.split(',')[0].strip()
+            
+            allowed, reason, remaining = check_preview_allowed(client_ip)
+            if not allowed:
+                return jsonify({
+                    'success': False,
+                    'error': reason,
+                    'code': 'PREVIEW_LIMIT_REACHED',
+                    'requires_auth': True
+                }), 429  # Too Many Requests
+        
         if 'file' not in request.files:
             return jsonify({
                 'success': False,
@@ -713,14 +805,22 @@ def process_doc():
             add_links=add_links
         )
         
+        # Record preview usage for rate limiting
+        if is_preview:
+            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+            if client_ip and ',' in client_ip:
+                client_ip = client_ip.split(',')[0].strip()
+            record_preview_usage(client_ip)
+        
         # Create session to store results
         session_id = sessions.create()
-        print(f"[API] Created session {session_id[:8]}... for document {file.filename}")
+        print(f"[API] Created session {session_id[:8]}... for document {file.filename} (preview={is_preview})")
         
         sessions.set(session_id, 'processed_doc', processed_bytes)
         sessions.set(session_id, 'original_bytes', file_bytes)  # Store original for re-processing
         sessions.set(session_id, 'style', style)
         sessions.set(session_id, 'metadata_cache', metadata_cache)  # Store cache for CSV export
+        sessions.set(session_id, 'is_preview', is_preview)  # Track preview status
         sessions.set(session_id, 'results', [
             {
                 'id': idx + 1,
@@ -761,10 +861,20 @@ def process_doc():
         from cost_tracker import finish_document_tracking
         doc_cost_summary = finish_document_tracking()
         
+        # Get remaining previews for unauthenticated users
+        remaining_previews = None
+        if is_preview:
+            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+            if client_ip and ',' in client_ip:
+                client_ip = client_ip.split(',')[0].strip()
+            _, _, remaining_previews = check_preview_allowed(client_ip)
+        
         return jsonify({
             'success': True,
             'session_id': session_id,
             'notes': notes,  # For workbench UI
+            'is_preview': is_preview,  # Frontend uses this to show login prompt
+            'remaining_previews': remaining_previews,  # How many free previews left
             'stats': {
                 'total': len(results),
                 'success': success_count,
@@ -787,8 +897,34 @@ def process_doc():
 
 @app.route('/api/download/<session_id>')
 def download(session_id: str):
-    """Download processed document."""
+    """
+    Download processed document.
+    
+    Requires:
+    - Authentication
+    - At least 1 credit
+    
+    Deducts 1 credit on successful download.
+    """
     try:
+        # Require authentication
+        if not current_user.is_authenticated:
+            return jsonify({
+                'success': False,
+                'error': 'Please log in to download your document',
+                'code': 'AUTH_REQUIRED'
+            }), 401
+        
+        # Check credits
+        if not has_credits(current_user.id, 1):
+            return jsonify({
+                'success': False,
+                'error': 'You need credits to download. Purchase credits to continue.',
+                'code': 'INSUFFICIENT_CREDITS',
+                'required': 1,
+                'balance': get_balance_fast(current_user.id)
+            }), 402  # Payment Required
+        
         # Get session data using proper method
         session_data = sessions.get(session_id)
         
@@ -807,6 +943,24 @@ def download(session_id: str):
                 'error': 'Processed document not found'
             }), 404
         
+        # Check if credit already spent for this session (idempotency)
+        credit_spent = session_data.get('credit_spent', False)
+        
+        if not credit_spent:
+            # Spend the credit
+            success = spend_user_credit(notes=f"Download: {filename}")
+            if not success:
+                return jsonify({
+                    'success': False,
+                    'error': 'Failed to process credit. Please try again.',
+                    'code': 'CREDIT_ERROR'
+                }), 500
+            
+            # Mark credit as spent for this session
+            sessions.set(session_id, 'credit_spent', True)
+            sessions.set(session_id, 'downloaded_by', current_user.id)
+            print(f"[API] Credit spent for user {current_user.id}, session {session_id[:8]}")
+        
         from io import BytesIO
         buffer = BytesIO(processed_doc)
         buffer.seek(0)
@@ -815,7 +969,7 @@ def download(session_id: str):
             buffer,
             mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             as_attachment=True,
-            download_name=f"citeflex_{filename}" if filename else "citeflex_processed.docx"
+            download_name=f"citategenie_{filename}" if filename else "citategenie_processed.docx"
         )
         
     except Exception as e:
@@ -1175,6 +1329,10 @@ def process_author_date():
     Extracts parenthetical citations like (Author, Year) and returns
     multiple options for each citation for user selection.
     
+    Preview Mode (Option C):
+    - Unauthenticated users can preview (rate limited)
+    - Download requires authentication + credits
+    
     Request: multipart/form-data with 'file' field
     Optional form fields:
         - style: Citation style (default: 'apa')
@@ -1203,6 +1361,25 @@ def process_author_date():
     }
     """
     try:
+        # Check authentication status
+        is_authenticated = current_user.is_authenticated
+        is_preview = not is_authenticated
+        
+        # Rate limit for unauthenticated users
+        if is_preview:
+            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+            if client_ip and ',' in client_ip:
+                client_ip = client_ip.split(',')[0].strip()
+            
+            allowed, reason, remaining = check_preview_allowed(client_ip)
+            if not allowed:
+                return jsonify({
+                    'success': False,
+                    'error': reason,
+                    'code': 'PREVIEW_LIMIT_REACHED',
+                    'requires_auth': True
+                }), 429  # Too Many Requests
+        
         if 'file' not in request.files:
             return jsonify({
                 'success': False,
@@ -1581,24 +1758,42 @@ def process_author_date():
         # Combine author-year and URL citations
         all_citations = citations + [c for c in url_citations if c is not None]
         
+        # Record preview usage for rate limiting
+        if is_preview:
+            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+            if client_ip and ',' in client_ip:
+                client_ip = client_ip.split(',')[0].strip()
+            record_preview_usage(client_ip)
+        
         # Create session to store results
         session_id = sessions.create()
-        print(f"[API] Created author-date session {session_id[:8]}... for document {file.filename}")
+        print(f"[API] Created author-date session {session_id[:8]}... for document {file.filename} (preview={is_preview})")
         
         sessions.set(session_id, 'original_bytes', file_bytes)
         sessions.set(session_id, 'style', style)
         sessions.set(session_id, 'mode', 'author-date')
         sessions.set(session_id, 'citations', all_citations)  # Store combined citations
         sessions.set(session_id, 'filename', secure_filename(file.filename))
+        sessions.set(session_id, 'is_preview', is_preview)  # Track preview status
         
         # Count stats
         author_year_count = len(citations)
         url_count = len([c for c in url_citations if c is not None])
         
+        # Get remaining previews for unauthenticated users
+        remaining_previews = None
+        if is_preview:
+            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+            if client_ip and ',' in client_ip:
+                client_ip = client_ip.split(',')[0].strip()
+            _, _, remaining_previews = check_preview_allowed(client_ip)
+        
         return jsonify({
             'success': True,
             'session_id': session_id,
             'citations': all_citations,
+            'is_preview': is_preview,  # Frontend uses this to show login prompt
+            'remaining_previews': remaining_previews,  # How many free previews left
             'stats': {
                 'total': len(all_citations),
                 'author_year': author_year_count,

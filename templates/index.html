@@ -42,7 +42,7 @@
         .landing-page {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            padding: 20px;
+            padding: 70px 20px 20px 20px; /* Added top padding for user bar */
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -340,6 +340,7 @@
             flex-direction: column;
             overflow: hidden;
             background: #f8fafc;
+            padding-top: 50px; /* Added for user bar */
         }
 
         .workbench.active {
@@ -1201,9 +1202,497 @@
 
         /* Hide landing when workbench active */
         .landing-page.hidden { display: none; }
+
+        /* =============================================================================
+           BILLING SYSTEM STYLES
+           ============================================================================= */
+
+        /* Auth Modal Styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 16px;
+            padding: 32px;
+            max-width: 420px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+            animation: modalSlideIn 0.3s ease;
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .modal-header h2 {
+            font-size: 1.5rem;
+            color: var(--primary-color);
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--text-secondary);
+            padding: 4px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .modal-close:hover {
+            background: #f0f0f0;
+            color: var(--text-primary);
+        }
+
+        .auth-tabs {
+            display: flex;
+            margin-bottom: 24px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .auth-tab {
+            flex: 1;
+            padding: 12px;
+            background: none;
+            border: none;
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+        }
+
+        .auth-tab.active {
+            color: var(--accent-color);
+            border-bottom-color: var(--accent-color);
+        }
+
+        .auth-form {
+            display: none;
+        }
+
+        .auth-form.active {
+            display: block;
+        }
+
+        .auth-form .form-group {
+            margin-bottom: 20px;
+        }
+
+        .auth-form .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .auth-form .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+
+        .auth-form .form-group input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .auth-submit {
+            width: 100%;
+            padding: 14px;
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .auth-submit:hover {
+            background: #5a6fd6;
+            transform: translateY(-1px);
+        }
+
+        .auth-submit:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .auth-error {
+            background: #fee;
+            color: #c00;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 0.9rem;
+            display: none;
+        }
+
+        .auth-error.show {
+            display: block;
+        }
+
+        .auth-bonus {
+            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .auth-bonus i {
+            color: var(--success-color);
+            margin-right: 8px;
+        }
+
+        /* User Bar Styles */
+        .user-bar {
+            position: fixed;
+            top: 0;
+            right: 0;
+            left: 0;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 10px 20px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 16px;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .user-bar.hidden {
+            display: none;
+        }
+
+        .credit-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+
+        .credit-display i {
+            font-size: 1.1rem;
+        }
+
+        .credit-count {
+            font-weight: 700;
+        }
+
+        .user-email {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .user-bar-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            font-size: 0.9rem;
+        }
+
+        .btn-buy-credits {
+            background: var(--success-color);
+            color: white;
+        }
+
+        .btn-buy-credits:hover {
+            background: #219a52;
+        }
+
+        .btn-login {
+            background: var(--accent-color);
+            color: white;
+        }
+
+        .btn-login:hover {
+            background: #5a6fd6;
+        }
+
+        .btn-logout {
+            background: #f0f0f0;
+            color: var(--text-secondary);
+        }
+
+        .btn-logout:hover {
+            background: #e0e0e0;
+        }
+
+        /* Buy Credits Modal */
+        .products-grid {
+            display: grid;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .product-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .product-card:hover {
+            border-color: var(--accent-color);
+            transform: translateY(-2px);
+        }
+
+        .product-card.selected {
+            border-color: var(--accent-color);
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .product-badge {
+            position: absolute;
+            top: -10px;
+            right: 16px;
+            background: var(--success-color);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .product-name {
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 4px;
+        }
+
+        .product-credits {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+        }
+
+        .product-price {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-color);
+        }
+
+        .product-per-credit {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        /* Preview Banner */
+        .preview-banner {
+            background: linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%);
+            border: 1px solid #ffc107;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .preview-banner.hidden {
+            display: none;
+        }
+
+        .preview-banner i {
+            color: #856404;
+            font-size: 1.3rem;
+        }
+
+        .preview-banner-text {
+            flex: 1;
+        }
+
+        .preview-banner-text strong {
+            color: #856404;
+        }
+
+        .preview-banner-btn {
+            background: var(--accent-color);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .preview-banner-btn:hover {
+            background: #5a6fd6;
+        }
+
+        /* Notification toast */
+        @keyframes slideInRight {
+            from { opacity: 0; transform: translateX(100px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        @keyframes fadeOutRight {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(100px); }
+        }
     </style>
 </head>
 <body>
+
+    <!-- =============================================================================
+         USER BAR (shows at top of page)
+         ============================================================================= -->
+    <div id="user-bar" class="user-bar hidden">
+        <div id="user-info-logged-out">
+            <button class="user-bar-btn btn-login" onclick="showAuthModal('login')">
+                <i class="fas fa-sign-in-alt"></i> Log In
+            </button>
+        </div>
+        <div id="user-info-logged-in" style="display: none;">
+            <span class="user-email" id="user-email-display"></span>
+            <div class="credit-display">
+                <i class="fas fa-coins"></i>
+                <span class="credit-count" id="credit-count">0</span> credits
+            </div>
+            <button class="user-bar-btn btn-buy-credits" onclick="showBuyCreditsModal()">
+                <i class="fas fa-plus"></i> Buy Credits
+            </button>
+            <button class="user-bar-btn btn-logout" onclick="logout()">
+                <i class="fas fa-sign-out-alt"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- =============================================================================
+         AUTH MODAL (Login / Register)
+         ============================================================================= -->
+    <div id="auth-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="auth-modal-title">Welcome to CitateGenie</h2>
+                <button class="modal-close" onclick="hideAuthModal()">&times;</button>
+            </div>
+            
+            <div class="auth-bonus">
+                <i class="fas fa-gift"></i>
+                <strong>Sign up and get 3 free document credits!</strong>
+            </div>
+            
+            <div id="auth-error" class="auth-error"></div>
+            
+            <div class="auth-tabs">
+                <button class="auth-tab active" onclick="switchAuthTab('login')">Log In</button>
+                <button class="auth-tab" onclick="switchAuthTab('register')">Sign Up</button>
+            </div>
+            
+            <!-- Login Form -->
+            <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="login-email">Email</label>
+                    <input type="email" id="login-email" required placeholder="you@example.com">
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" required placeholder="••••••••">
+                </div>
+                <button type="submit" class="auth-submit" id="login-submit">
+                    <i class="fas fa-sign-in-alt"></i> Log In
+                </button>
+            </form>
+            
+            <!-- Register Form -->
+            <form id="register-form" class="auth-form" onsubmit="handleRegister(event)">
+                <div class="form-group">
+                    <label for="register-name">Name (optional)</label>
+                    <input type="text" id="register-name" placeholder="Your name">
+                </div>
+                <div class="form-group">
+                    <label for="register-email">Email</label>
+                    <input type="email" id="register-email" required placeholder="you@example.com">
+                </div>
+                <div class="form-group">
+                    <label for="register-password">Password</label>
+                    <input type="password" id="register-password" required minlength="8" placeholder="At least 8 characters">
+                </div>
+                <button type="submit" class="auth-submit" id="register-submit">
+                    <i class="fas fa-user-plus"></i> Create Account
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- =============================================================================
+         BUY CREDITS MODAL
+         ============================================================================= -->
+    <div id="credits-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Buy Credits</h2>
+                <button class="modal-close" onclick="hideBuyCreditsModal()">&times;</button>
+            </div>
+            
+            <p style="margin-bottom: 20px; color: var(--text-secondary);">
+                Each credit lets you process and download one document.
+            </p>
+            
+            <div id="products-container" class="products-grid">
+                <!-- Products loaded dynamically -->
+            </div>
+            
+            <button id="checkout-btn" class="auth-submit" onclick="startCheckout()" disabled>
+                <i class="fas fa-credit-card"></i> Continue to Payment
+            </button>
+        </div>
+    </div>
 
     <!-- LANDING PAGE -->
     <div id="landing-page" class="landing-page">
@@ -1706,6 +2195,17 @@
                     body: formData
                 });
                 
+                // Handle rate limit (preview limit reached)
+                if (response.status === 429) {
+                    const data = await response.json();
+                    hideProcessingOverlay();
+                    document.getElementById('progress-container').classList.remove('active');
+                    document.getElementById('process-btn').disabled = false;
+                    showNotification(data.error || 'Preview limit reached. Please sign up for unlimited access.', 'warning');
+                    showAuthModal('register');
+                    return;
+                }
+                
                 updateProcessingStatus('Processing citations...', 60);
                 
                 const data = await response.json();
@@ -1718,6 +2218,15 @@
                 
                 currentSessionId = data.session_id;
                 currentCitations = data.citations || data.notes || [];
+                
+                // Track preview mode
+                if (data.is_preview) {
+                    isPreviewMode = true;
+                    showPreviewBanner(data.remaining_previews);
+                } else {
+                    isPreviewMode = false;
+                    hidePreviewBanner();
+                }
                 
                 if (currentCitations.length === 0) {
                     hideProcessingOverlay();
@@ -2439,6 +2948,20 @@
         async function downloadDocument() {
             if (!currentSessionId) return alert('No document to download');
             
+            // Check if user is logged in
+            if (!currentUser) {
+                showAuthModal('login');
+                showNotification('Please log in to download your document', 'info');
+                return;
+            }
+            
+            // Check if user has credits
+            if (currentUser.credits < 1) {
+                showBuyCreditsModal();
+                showNotification('You need credits to download. Purchase credits to continue.', 'warning');
+                return;
+            }
+            
             try {
                 if (outputType === 'author-date') {
                     const res = await fetch('/api/finalize-author-date', {
@@ -2451,6 +2974,28 @@
                 }
                 
                 const response = await fetch(`/api/download/${currentSessionId}`);
+                
+                // Handle auth errors
+                if (response.status === 401) {
+                    const data = await response.json();
+                    showAuthModal('login');
+                    showNotification(data.error || 'Please log in to download', 'warning');
+                    return;
+                }
+                
+                // Handle insufficient credits
+                if (response.status === 402) {
+                    const data = await response.json();
+                    showBuyCreditsModal();
+                    showNotification(data.error || 'You need credits to download', 'warning');
+                    // Update local credit count
+                    if (currentUser && data.balance !== undefined) {
+                        currentUser.credits = data.balance;
+                        updateUserBar();
+                    }
+                    return;
+                }
+                
                 if (!response.ok) throw new Error('Download failed');
                 
                 const blob = await response.blob();
@@ -2462,6 +3007,11 @@
                 a.click();
                 window.URL.revokeObjectURL(url);
                 a.remove();
+                
+                // Refresh user data to update credit count
+                await initAuth();
+                showNotification('Document downloaded! 1 credit used.', 'success');
+                
             } catch (error) {
                 alert('Error: ' + error.message);
             }
@@ -2546,6 +3096,348 @@
             div.textContent = text;
             return div.innerHTML;
         }
+
+        // =============================================================================
+        // BILLING SYSTEM JAVASCRIPT
+        // =============================================================================
+
+        // ========== AUTH STATE ==========
+        let currentUser = null;
+        let isPreviewMode = false;
+
+        // ========== INITIALIZATION ==========
+        async function initAuth() {
+            try {
+                const response = await fetch('/billing/me');
+                const data = await response.json();
+                
+                if (data.authenticated) {
+                    currentUser = data.user;
+                    isPreviewMode = false;
+                    updateUserBar();
+                } else {
+                    currentUser = null;
+                    isPreviewMode = true;
+                    updateUserBar();
+                }
+                
+                // Show user bar
+                document.getElementById('user-bar').classList.remove('hidden');
+                
+                // Check for payment redirect
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.get('payment') === 'success') {
+                    showNotification('Payment successful! Credits have been added.', 'success');
+                    // Refresh user data
+                    setTimeout(initAuth, 500);
+                    // Clean URL
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                } else if (urlParams.get('payment') === 'cancelled') {
+                    showNotification('Payment cancelled.', 'info');
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                }
+                
+            } catch (error) {
+                console.error('Auth init error:', error);
+            }
+        }
+
+        function updateUserBar() {
+            const loggedOut = document.getElementById('user-info-logged-out');
+            const loggedIn = document.getElementById('user-info-logged-in');
+            
+            if (currentUser) {
+                loggedOut.style.display = 'none';
+                loggedIn.style.display = 'flex';
+                loggedIn.style.alignItems = 'center';
+                loggedIn.style.gap = '16px';
+                
+                document.getElementById('user-email-display').textContent = currentUser.email;
+                document.getElementById('credit-count').textContent = currentUser.credits;
+            } else {
+                loggedOut.style.display = 'flex';
+                loggedIn.style.display = 'none';
+            }
+        }
+
+        // ========== AUTH MODAL ==========
+        function showAuthModal(tab = 'login') {
+            document.getElementById('auth-modal').classList.add('active');
+            switchAuthTab(tab);
+            document.getElementById('auth-error').classList.remove('show');
+        }
+
+        function hideAuthModal() {
+            document.getElementById('auth-modal').classList.remove('active');
+        }
+
+        function switchAuthTab(tab) {
+            // Update tabs
+            document.querySelectorAll('.auth-tab').forEach((t, i) => {
+                t.classList.toggle('active', (tab === 'login' && i === 0) || (tab === 'register' && i === 1));
+            });
+            
+            // Update forms
+            document.getElementById('login-form').classList.toggle('active', tab === 'login');
+            document.getElementById('register-form').classList.toggle('active', tab === 'register');
+            
+            // Update title
+            document.getElementById('auth-modal-title').textContent = 
+                tab === 'login' ? 'Welcome Back' : 'Create Your Account';
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            const submitBtn = document.getElementById('login-submit');
+            const errorDiv = document.getElementById('auth-error');
+            
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Logging in...';
+            errorDiv.classList.remove('show');
+            
+            try {
+                const response = await fetch('/billing/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, remember: true })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentUser = data.user;
+                    isPreviewMode = false;
+                    updateUserBar();
+                    hideAuthModal();
+                    hidePreviewBanner();
+                    showNotification(`Welcome back, ${currentUser.name || currentUser.email}!`, 'success');
+                } else {
+                    errorDiv.textContent = data.error || 'Login failed';
+                    errorDiv.classList.add('show');
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Connection error. Please try again.';
+                errorDiv.classList.add('show');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Log In';
+            }
+        }
+
+        async function handleRegister(event) {
+            event.preventDefault();
+            
+            const name = document.getElementById('register-name').value;
+            const email = document.getElementById('register-email').value;
+            const password = document.getElementById('register-password').value;
+            const submitBtn = document.getElementById('register-submit');
+            const errorDiv = document.getElementById('auth-error');
+            
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating account...';
+            errorDiv.classList.remove('show');
+            
+            try {
+                const response = await fetch('/billing/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, name })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentUser = data.user;
+                    isPreviewMode = false;
+                    updateUserBar();
+                    hideAuthModal();
+                    hidePreviewBanner();
+                    showNotification(`Welcome! You have ${currentUser.credits} free credits.`, 'success');
+                } else {
+                    errorDiv.textContent = data.error || 'Registration failed';
+                    errorDiv.classList.add('show');
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Connection error. Please try again.';
+                errorDiv.classList.add('show');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-user-plus"></i> Create Account';
+            }
+        }
+
+        async function logout() {
+            try {
+                await fetch('/billing/logout', { method: 'POST' });
+                currentUser = null;
+                isPreviewMode = true;
+                updateUserBar();
+                showNotification('Logged out successfully', 'info');
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+        }
+
+        // ========== BUY CREDITS MODAL ==========
+        let selectedProduct = null;
+        let products = [];
+
+        async function showBuyCreditsModal() {
+            document.getElementById('credits-modal').classList.add('active');
+            await loadProducts();
+        }
+
+        function hideBuyCreditsModal() {
+            document.getElementById('credits-modal').classList.remove('active');
+            selectedProduct = null;
+        }
+
+        async function loadProducts() {
+            const container = document.getElementById('products-container');
+            container.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">Loading...</p>';
+            
+            try {
+                const response = await fetch('/billing/products');
+                const data = await response.json();
+                products = data.products;
+                
+                container.innerHTML = products.map(p => `
+                    <div class="product-card" onclick="selectProduct('${p.code}')" id="product-${p.code}">
+                        ${p.badge ? `<span class="product-badge">${p.badge}</span>` : ''}
+                        <div class="product-name">${p.name}</div>
+                        <div class="product-credits">${p.credits} document${p.credits > 1 ? 's' : ''}</div>
+                        <div class="product-price">$${p.price.toFixed(2)}</div>
+                        ${p.savings_percent > 0 ? `<div class="product-per-credit">$${p.price_per_credit.toFixed(2)}/doc · Save ${p.savings_percent}%</div>` : ''}
+                    </div>
+                `).join('');
+            } catch (error) {
+                container.innerHTML = '<p style="color: #c00;">Failed to load products</p>';
+            }
+        }
+
+        function selectProduct(code) {
+            selectedProduct = code;
+            
+            // Update visual selection
+            document.querySelectorAll('.product-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            document.getElementById(`product-${code}`).classList.add('selected');
+            
+            // Enable checkout button
+            document.getElementById('checkout-btn').disabled = false;
+        }
+
+        async function startCheckout() {
+            if (!selectedProduct) return;
+            if (!currentUser) {
+                hideBuyCreditsModal();
+                showAuthModal('register');
+                return;
+            }
+            
+            const btn = document.getElementById('checkout-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Redirecting...';
+            
+            try {
+                const response = await fetch('/billing/checkout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ product_code: selectedProduct })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.checkout_url) {
+                    window.location.href = data.checkout_url;
+                } else {
+                    showNotification(data.error || 'Checkout failed', 'error');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-credit-card"></i> Continue to Payment';
+                }
+            } catch (error) {
+                showNotification('Connection error', 'error');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-credit-card"></i> Continue to Payment';
+            }
+        }
+
+        // ========== PREVIEW MODE HANDLING ==========
+        function showPreviewBanner(remaining) {
+            // Create preview banner if it doesn't exist in workbench
+            let banner = document.getElementById('preview-banner');
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'preview-banner';
+                banner.className = 'preview-banner';
+                banner.innerHTML = `
+                    <i class="fas fa-eye"></i>
+                    <div class="preview-banner-text">
+                        <strong>Preview Mode</strong><br>
+                        <span id="preview-message">Log in or sign up to download your formatted document.</span>
+                    </div>
+                    <button class="preview-banner-btn" onclick="showAuthModal('register')">
+                        Sign Up Free
+                    </button>
+                `;
+                // Insert at top of workbench sidebar
+                const sidebar = document.querySelector('.workbench-sidebar');
+                if (sidebar) {
+                    sidebar.insertBefore(banner, sidebar.firstChild);
+                }
+            }
+            
+            const message = document.getElementById('preview-message');
+            if (message && remaining !== null && remaining !== undefined) {
+                message.innerHTML = `You have <strong>${remaining}</strong> free preview${remaining !== 1 ? 's' : ''} remaining. Log in to download.`;
+            }
+            
+            banner.classList.remove('hidden');
+        }
+
+        function hidePreviewBanner() {
+            const banner = document.getElementById('preview-banner');
+            if (banner) banner.classList.add('hidden');
+        }
+
+        // ========== NOTIFICATION HELPER ==========
+        function showNotification(message, type = 'info') {
+            const colors = {
+                success: '#27ae60',
+                error: '#e74c3c',
+                info: '#3498db',
+                warning: '#f39c12'
+            };
+            
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 80px;
+                right: 20px;
+                background: ${colors[type]};
+                color: white;
+                padding: 16px 24px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                z-index: 10001;
+                animation: slideInRight 0.3s ease;
+                max-width: 350px;
+            `;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.animation = 'fadeOutRight 0.3s ease';
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        // ========== INITIALIZE ON PAGE LOAD ==========
+        document.addEventListener('DOMContentLoaded', initAuth);
     </script>
 </body>
 </html>

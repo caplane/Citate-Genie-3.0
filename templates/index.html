@@ -1867,7 +1867,6 @@
                             </div>
                         </div>
                         <div class="editor-nav">
-                            <span id="ad-type-badge" class="type-badge">UNKNOWN</span>
                             <button id="btn-prev" class="nav-btn" onclick="adNavigate(-1)" disabled>
                                 <i class="fas fa-chevron-left"></i>
                             </button>
@@ -1911,7 +1910,7 @@
                             <div class="alternatives-section">
                                 <div class="alternatives-header">
                                     <span class="alternatives-title">
-                                        <i class="fas fa-magic"></i> Alternative Resolutions
+                                        <i class="fas fa-list"></i> Options
                                     </span>
                                     <button class="btn-refresh" onclick="adRefreshAlternatives()">
                                         <i class="fas fa-sync-alt"></i> Refresh
@@ -1939,7 +1938,6 @@
                             </div>
                         </div>
                         <div class="editor-nav">
-                            <span id="fn-type-badge" class="type-badge">UNKNOWN</span>
                             <button id="fn-btn-prev" class="nav-btn" onclick="fnNavigate(-1)" disabled>
                                 <i class="fas fa-chevron-left"></i>
                             </button>
@@ -1983,7 +1981,7 @@
                             <div class="alternatives-section">
                                 <div class="alternatives-header">
                                     <span class="alternatives-title">
-                                        <i class="fas fa-magic"></i> Alternative Resolutions
+                                        <i class="fas fa-list"></i> Options
                                     </span>
                                     <button class="btn-refresh" onclick="fnSearchAlternatives()">
                                         <i class="fas fa-sync-alt"></i> Refresh
@@ -2319,7 +2317,6 @@
                         <div class="citation-item-header">
                             <span class="citation-item-num">#${idx + 1}</span>
                             ${statusIcon}
-                            ${isUrl ? '<span class="type-badge badge-url">URL</span>' : ''}
                         </div>
                         <p class="citation-item-text">${escapeHtml(displayText)}</p>
                         <p class="citation-item-status">${isAccepted ? '✓ Accepted' : `${cite.options?.length || 0} options found`}</p>
@@ -2362,11 +2359,6 @@
             } else {
                 document.getElementById('original-citation-text').textContent = originalText;
             }
-            
-            const typeBadge = document.getElementById('ad-type-badge');
-            const citationType = isUrl ? 'url' : (cite.options?.[1]?.citation_type || 'unknown');
-            typeBadge.textContent = citationType.toUpperCase();
-            typeBadge.className = `type-badge badge-${citationType}`;
             
             document.getElementById('btn-prev').disabled = idx === 0;
             document.getElementById('btn-next').disabled = idx === currentCitations.length - 1;
@@ -2436,10 +2428,6 @@
                 html += `
                     <div class="alternative-card" onclick="adSelectAlternative(${idx + 1})">
                         <div class="alternative-header">
-                            <div class="alternative-badges">
-                                <span class="type-badge badge-${opt.citation_type || 'unknown'}">${(opt.citation_type || 'Unknown').toUpperCase()}</span>
-                                ${opt.source ? `<span class="type-badge">${escapeHtml(opt.source)}</span>` : ''}
-                            </div>
                             ${opt.year ? `<span style="font-size: 0.75rem; color: #6b7280;">${opt.year}</span>` : ''}
                         </div>
                         <p class="alternative-title">${escapeHtml(opt.title || 'Untitled')}</p>
@@ -2516,10 +2504,6 @@
                     
                     container.innerHTML = data.results.map((r, i) => `
                         <div class="alternative-card" onclick="adSelectFreshAlternative(${i})">
-                            <div class="alternative-header">
-                                <span class="type-badge badge-${r.type || 'unknown'}">${(r.type || 'Unknown').toUpperCase()}</span>
-                                <span style="font-size: 0.75rem; color: #9ca3af;">${r.source || ''}</span>
-                            </div>
                             <p style="font-size: 0.9rem; color: #374151;">${escapeHtml(r.citation)}</p>
                         </div>
                     `).join('');
@@ -2664,7 +2648,6 @@
                         <div class="citation-item-header">
                             <span class="citation-item-num">Note ${noteId}</span>
                             ${isSuccess ? '<i class="fas fa-check-circle" style="color: #22c55e;"></i>' : '<i class="fas fa-clock" style="color: #f59e0b;"></i>'}
-                            <span class="type-badge badge-${cite.type || 'unknown'}">${(cite.type || '?').toUpperCase()}</span>
                         </div>
                         <p class="citation-item-text">${escapeHtml(displayText)}${displayText.length >= 50 ? '...' : ''}</p>
                     </div>
@@ -2687,10 +2670,6 @@
             
             document.getElementById('fn-editor-num').textContent = `Note ${noteId}`;
             document.getElementById('fn-editor-position').textContent = `${idx + 1} of ${currentCitations.length}`;
-            
-            const typeEl = document.getElementById('fn-type-badge');
-            typeEl.textContent = (cite.type || 'unknown').toUpperCase();
-            typeEl.className = `type-badge badge-${cite.type || 'unknown'}`;
             
             document.getElementById('fn-original-text').textContent = cite.text || cite.original || '';
             document.getElementById('fn-final-textarea').value = cite.formatted || '';
@@ -2727,10 +2706,6 @@
                     
                     container.innerHTML = data.results.map((r, i) => `
                         <div class="alternative-card" onclick="fnSelectAlternative(${i})">
-                            <div class="alternative-header">
-                                <span class="type-badge badge-${r.type || 'unknown'}">${(r.type || 'Unknown').toUpperCase()}</span>
-                                <span style="font-size: 0.75rem; color: #9ca3af;">${r.source || ''}</span>
-                            </div>
                             <p style="font-size: 0.9rem; color: #374151;">${escapeHtml(r.citation)}</p>
                         </div>
                     `).join('');
